@@ -1,0 +1,58 @@
+## .NET
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.userprefs
+
+## Visual Studio
+.vs/
+*.rsuser
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+## NuGet
+**/[Pp]ackages/*
+*.nupkg
+*.snupkg
+.nuget/
+NuGetScratch/
+
+## Build results
+[Dd]ebug/
+[Rr]elease/
+*.appx
+*.appxbundle
+*.appxupload
+*.msix
+*.msixbundle
+*.msixupload
+
+## Windows Store
+AppPackages/
+BundleArtifacts/
+Package.StoreAssociation.xml
+
+## MSIX
+*.msix
+
+## Misc
+*.log
+Thumbs.db
+*.tmp
+*.temp
+.DS_Store

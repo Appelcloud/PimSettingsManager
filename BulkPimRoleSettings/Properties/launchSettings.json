@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "BulkPimRoleSettings (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "BulkPimRoleSettings (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}
