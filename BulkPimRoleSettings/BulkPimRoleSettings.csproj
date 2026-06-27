@@ -16,6 +16,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Content Include="Assets\AppLogo.png" />
+    <Content Include="Assets\lockup-horizontal.png" />
     <Content Include="Assets\SplashScreen.scale-200.png" />
     <Content Include="Assets\LockScreenLogo.scale-200.png" />
     <Content Include="Assets\Square150x150Logo.scale-200.png" />

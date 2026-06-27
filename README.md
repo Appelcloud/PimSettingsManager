@@ -1,4 +1,8 @@
-# Bulk PIM Role Settings Manager
+# PIMSettings Manager
+
+<p align="center">
+  <img src="docs/lockup-horizontal.png" alt="PIMSettings Manager" height="80">
+</p>
 
 A Windows desktop tool for configuring PIM (Privileged Identity Management) role settings across multiple Entra ID roles and PIM-enabled groups in bulk. Save hours of manual work by applying activation, assignment, and notification settings to many roles at once.
 
@@ -6,9 +10,10 @@ A Windows desktop tool for configuring PIM (Privileged Identity Management) role
 
 - **Bulk edit Entra ID role settings** — Select multiple directory roles and configure them simultaneously
 - **Bulk edit PIM for Groups settings** — Apply settings to PIM-enabled security groups
-- **Preview all changes before applying** — Review a detailed summary grouped by category before committing
-- **Configure activation, assignment & notification policies** — Full control over MFA, justification, approval, expiration, and email notifications
 - **Per-category configuration** — Set different policies for Entra ID roles vs. PIM Groups in a single session
+- **Preview all changes before applying** — Review a detailed diff grouped by category before committing
+- **Configure activation, assignment & notification policies** — Full control over MFA, justification, approval, expiration, authentication contexts, and email notifications
+- **Detailed logging** — Full audit trail logged locally for troubleshooting and compliance
 
 ## Screenshots
 
@@ -30,11 +35,11 @@ A Windows desktop tool for configuring PIM (Privileged Identity Management) role
 
 ## Getting Started
 
-1. Download the latest release from [Releases](https://github.com/youruser/BulkPimRoleSettings/releases)
+1. Download the latest release from [Releases](https://github.com/Appelcloud/BulkPimRoleSettings/releases)
 2. Run the application
 3. Sign in with your Entra ID credentials
-4. Select the PIM categories you want to manage
-5. Choose roles, configure settings, preview, and apply!
+4. Select the PIM categories you want to manage (Entra ID Roles, PIM for Groups, or both)
+5. Select roles, configure settings per category, preview all changes, and apply!
 
 ## Permissions Required
 
@@ -48,6 +53,7 @@ The application uses delegated permissions via MSAL (Microsoft Authentication Li
 ## Built With
 
 - [WinUI 3](https://learn.microsoft.com/en-us/windows/apps/winui/winui3/) — Modern Windows UI framework
+- [Windows App SDK](https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/) — Windows application platform
 - [CommunityToolkit.Mvvm](https://learn.microsoft.com/en-us/dotnet/communitytoolkit/mvvm/) — MVVM architecture
 - [Microsoft Identity Client (MSAL)](https://learn.microsoft.com/en-us/entra/msal/) — Authentication
 - [Microsoft Graph API](https://learn.microsoft.com/en-us/graph/) — PIM policy management

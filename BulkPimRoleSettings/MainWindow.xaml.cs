@@ -18,7 +18,7 @@ public sealed partial class MainWindow : Window
         var appWindow = this.AppWindow;
         appWindow.Resize(new Windows.Graphics.SizeInt32(1300, 900));
         appWindow.SetIcon("Assets/AppLogo.png");
-        Title = "Bulk PIM Role Settings Manager";
+        Title = "PIMSettings Manager";
 
         RootFrame.Navigate(typeof(MainPage));
     }

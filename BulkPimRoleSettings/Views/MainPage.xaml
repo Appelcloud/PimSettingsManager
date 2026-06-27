@@ -35,7 +35,7 @@
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
             <StackPanel>
-                <TextBlock Text="Bulk PIM Role Settings Manager" Style="{StaticResource TitleTextBlockStyle}"/>
+                <TextBlock Text="PIMSettings Manager" Style="{StaticResource TitleTextBlockStyle}"/>
                 <TextBlock Text="{x:Bind ViewModel.StatusMessage, Mode=OneWay}"
                            Foreground="{ThemeResource TextFillColorSecondaryBrush}" Margin="0,4,0,0"/>
             </StackPanel>
@@ -75,10 +75,7 @@
                 <StackPanel Visibility="{x:Bind ViewModel.CurrentStep, Mode=OneWay, Converter={StaticResource StepVisibilityConverter}, ConverterParameter=0}"
                             VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="24" MaxWidth="500">
                     <StackPanel Spacing="8" HorizontalAlignment="Center">
-                        <FontIcon Glyph="&#xE8D7;" FontSize="48" HorizontalAlignment="Center"
-                                  Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"/>
-                        <TextBlock Text="Bulk PIM Role Settings Manager" TextAlignment="Center"
-                                   Style="{StaticResource SubtitleTextBlockStyle}"/>
+                        <Image Source="ms-appx:///Assets/lockup-horizontal.png" Height="64" HorizontalAlignment="Center"/>
                         <TextBlock TextWrapping="Wrap" TextAlignment="Center"
                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}" LineHeight="20">
                             Configure PIM role settings across multiple Entra ID roles and PIM-enabled groups in bulk. Save hours of manual work by applying activation, assignment, and notification settings to many roles at once.
@@ -628,7 +625,7 @@
                                                                                 </Grid.ColumnDefinitions>
                                                                                 <TextBlock Text="{x:Bind SettingName}" TextWrapping="Wrap"/>
                                                                                 <TextBlock Grid.Column="1" Text="{x:Bind CurrentValue}"/>
-                                                                                <TextBlock Grid.Column="2" Text="{x:Bind NewValue}" FontWeight="SemiBold" Foreground="LightGreen"/>
+                                                                                <TextBlock Grid.Column="2" Text="{x:Bind NewValue}" FontWeight="SemiBold"/>
                                                                             </Grid>
                                                                         </DataTemplate>
                                                                     </ItemsRepeater.ItemTemplate>
