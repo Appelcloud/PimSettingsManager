@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using BulkPimRoleSettings.Views;
 using Microsoft.UI.Xaml;
 using WinRT.Interop;
@@ -17,7 +18,13 @@ public sealed partial class MainWindow : Window
 
         var appWindow = this.AppWindow;
         appWindow.Resize(new Windows.Graphics.SizeInt32(1300, 900));
-        appWindow.SetIcon("Assets/AppLogo.png");
+
+        // Resolve against the EXE folder — a relative path breaks when the app
+        // is launched from a shortcut whose working directory differs.
+        var iconPath = Path.Combine(AppContext.BaseDirectory, "favicon.ico");
+        if (File.Exists(iconPath))
+            appWindow.SetIcon(iconPath);
+
         Title = "PIMSettings Manager";
 
         RootFrame.Navigate(typeof(MainPage));

@@ -8,6 +8,7 @@
     xmlns:converters="using:BulkPimRoleSettings.Converters"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    NavigationCacheMode="Required"
     mc:Ignorable="d">
 
     <Page.Resources>
@@ -73,39 +74,10 @@
             <Grid>
                 <!-- Step 0: Login -->
                 <StackPanel Visibility="{x:Bind ViewModel.CurrentStep, Mode=OneWay, Converter={StaticResource StepVisibilityConverter}, ConverterParameter=0}"
-                            VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="24" MaxWidth="500">
-                    <StackPanel Spacing="8" HorizontalAlignment="Center">
-                        <Image Source="ms-appx:///Assets/lockup-horizontal.png" Height="64" HorizontalAlignment="Center"/>
-                        <TextBlock TextWrapping="Wrap" TextAlignment="Center"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" LineHeight="20">
-                            Configure PIM role settings across multiple Entra ID roles and PIM-enabled groups in bulk. Save hours of manual work by applying activation, assignment, and notification settings to many roles at once.
-                        </TextBlock>
-                    </StackPanel>
-
-                    <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="8" Padding="16" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
-                        <StackPanel Spacing="8">
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <FontIcon Glyph="&#xE73E;" FontSize="12" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"/>
-                                <TextBlock Text="Bulk edit Entra ID role settings" FontSize="13"/>
-                            </StackPanel>
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <FontIcon Glyph="&#xE73E;" FontSize="12" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"/>
-                                <TextBlock Text="Bulk edit PIM for Groups settings" FontSize="13"/>
-                            </StackPanel>
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <FontIcon Glyph="&#xE73E;" FontSize="12" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"/>
-                                <TextBlock Text="Preview all changes before applying" FontSize="13"/>
-                            </StackPanel>
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <FontIcon Glyph="&#xE73E;" FontSize="12" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"/>
-                                <TextBlock Text="Configure activation, assignment &amp; notification policies" FontSize="13"/>
-                            </StackPanel>
-                        </StackPanel>
-                    </Border>
+                            VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="24" MaxWidth="900">
+                    <Image Source="ms-appx:///Assets/lockup-horizontal.png" Height="160" HorizontalAlignment="Center"/>
 
                     <StackPanel Spacing="12" HorizontalAlignment="Center">
-                        <TextBlock Text="Sign in with your Entra ID credentials to get started."
-                                   TextAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" FontSize="12"/>
                         <Button Content="Sign In" HorizontalAlignment="Center" Style="{StaticResource AccentButtonStyle}"
                                 Command="{x:Bind ViewModel.LoginCommand}" IsEnabled="{x:Bind ViewModel.IsBusy, Mode=OneWay, Converter={StaticResource InverseBoolConverter}}"/>
                         <ProgressRing IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" HorizontalAlignment="Center"/>
@@ -134,7 +106,6 @@
                     <!-- Group scope picker -->
                     <StackPanel Visibility="{x:Bind ViewModel.IncludeGroups, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
                                 Spacing="8" Margin="28,0,0,0">
-                        <ProgressRing IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" HorizontalAlignment="Left"/>
                         <ListView ItemsSource="{x:Bind ViewModel.AvailableGroups}" SelectionMode="Multiple"
                                   MaxHeight="200" SelectionChanged="GroupList_SelectionChanged">
                             <ListView.ItemTemplate>
@@ -160,9 +131,15 @@
                         </ListView>
                     </StackPanel>
 
-                    <Button Content="Next" Style="{StaticResource AccentButtonStyle}"
-                            Command="{x:Bind ViewModel.ProceedToRolesCommand}"
-                            IsEnabled="{x:Bind ViewModel.IsBusy, Mode=OneWay, Converter={StaticResource InverseBoolConverter}}"/>
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <Button Content="Next" Style="{StaticResource AccentButtonStyle}"
+                                Command="{x:Bind ViewModel.ProceedToRolesCommand}"
+                                IsEnabled="{x:Bind ViewModel.IsBusy, Mode=OneWay, Converter={StaticResource InverseBoolConverter}}"/>
+                        <ProgressRing IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" Width="20" Height="20" VerticalAlignment="Center"/>
+                        <TextBlock Text="{x:Bind ViewModel.StatusMessage, Mode=OneWay}" FontSize="12"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center"
+                                   Visibility="{x:Bind ViewModel.IsBusy, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                    </StackPanel>
                     <TextBlock Text="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}" Foreground="IndianRed" TextWrapping="Wrap"/>
                 </StackPanel>
 
@@ -227,7 +204,12 @@
                 </Grid>
 
                 <!-- Step 3: Settings Editor -->
-                <ScrollViewer x:Name="SettingsScrollViewer" Visibility="{x:Bind ViewModel.CurrentStep, Mode=OneWay, Converter={StaticResource StepVisibilityConverter}, ConverterParameter=3}">
+                <Grid Visibility="{x:Bind ViewModel.CurrentStep, Mode=OneWay, Converter={StaticResource StepVisibilityConverter}, ConverterParameter=3}">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <ScrollViewer x:Name="SettingsScrollViewer" Grid.Row="0">
                     <StackPanel Spacing="16" MaxWidth="1000">
                         <StackPanel Orientation="Horizontal" Spacing="12">
                             <TextBlock Text="Configure Bulk Settings" Style="{StaticResource SubtitleTextBlockStyle}"/>
@@ -235,6 +217,16 @@
                                 <TextBlock Text="{x:Bind ViewModel.CurrentPhaseTitle, Mode=OneWay}" FontSize="12" Foreground="White" FontWeight="SemiBold"/>
                             </Border>
                         </StackPanel>
+
+                        <!-- Settings source hint: shows current values for a single selection, defaults for multiple -->
+                        <InfoBar IsOpen="True"
+                                 IsClosable="False"
+                                 Severity="Informational"
+                                 Message="{x:Bind ViewModel.SettingsSourceHint, Mode=OneWay}">
+                            <ToolTipService.ToolTip>
+                                <ToolTip Content="When a single role or group is selected, its currently configured PIM policy is displayed. When multiple are selected, default settings are shown and will be applied to every selected item."/>
+                            </ToolTipService.ToolTip>
+                        </InfoBar>
 
                         <!-- ACTIVATION -->
                         <TextBlock Text="Activation" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,12,0,0"/>
@@ -281,22 +273,54 @@
 
                             <!-- Approver search (visible when Require approval is SetTrue) -->
                             <StackPanel Visibility="{x:Bind ViewModel.IsApproverSearchVisible, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" Spacing="4" Margin="28,0,0,0">
-                                <AutoSuggestBox PlaceholderText="Search users by name or UPN..."
+                                <AutoSuggestBox PlaceholderText="Search users or groups by name, UPN, or email..."
                                                 Text="{x:Bind ViewModel.ApproverSearchQuery, Mode=TwoWay}"
                                                 TextChanged="ApproverSearch_TextChanged"
                                                 SuggestionChosen="ApproverSearch_SuggestionChosen"
                                                 ItemsSource="{x:Bind ViewModel.ApproverSearchResults}"
-                                                QueryIcon="Find"/>
-                                <ListView ItemsSource="{x:Bind ViewModel.SelectedApprovers}" SelectionMode="None" MaxHeight="150">
-                                    <ListView.ItemTemplate>
+                                                QueryIcon="Find">
+                                    <AutoSuggestBox.ItemTemplate>
                                         <DataTemplate x:DataType="models:DirectoryUser">
-                                            <Grid ColumnSpacing="8" Padding="4,2">
+                                            <Grid ColumnSpacing="10" Padding="2">
                                                 <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto"/>
                                                     <ColumnDefinition Width="*"/>
                                                     <ColumnDefinition Width="Auto"/>
                                                 </Grid.ColumnDefinitions>
-                                                <TextBlock Text="{x:Bind UserPrincipalName}" VerticalAlignment="Center"/>
-                                                <Button Grid.Column="1" Padding="4" ToolTipService.ToolTip="Remove"
+                                                <FontIcon Grid.Column="0" Glyph="{x:Bind TypeGlyph}" FontSize="16"
+                                                          VerticalAlignment="Center"/>
+                                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                    <TextBlock Text="{x:Bind DisplayName}" TextTrimming="CharacterEllipsis"/>
+                                                    <TextBlock Text="{x:Bind SecondaryText}" FontSize="12"
+                                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                               TextTrimming="CharacterEllipsis"/>
+                                                </StackPanel>
+                                                <TextBlock Grid.Column="2" Text="{x:Bind TypeLabel}" FontSize="11"
+                                                           VerticalAlignment="Center"
+                                                           Foreground="{ThemeResource TextFillColorTertiaryBrush}"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </AutoSuggestBox.ItemTemplate>
+                                </AutoSuggestBox>
+                                <ListView ItemsSource="{x:Bind ViewModel.SelectedApprovers}" SelectionMode="None" MaxHeight="150">
+                                    <ListView.ItemTemplate>
+                                        <DataTemplate x:DataType="models:DirectoryUser">
+                                            <Grid ColumnSpacing="10" Padding="4,4">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <FontIcon Grid.Column="0" Glyph="{x:Bind TypeGlyph}" FontSize="16"
+                                                          VerticalAlignment="Center"
+                                                          ToolTipService.ToolTip="{x:Bind TypeLabel}"/>
+                                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                    <TextBlock Text="{x:Bind DisplayName}" TextTrimming="CharacterEllipsis"/>
+                                                    <TextBlock Text="{x:Bind SecondaryText}" FontSize="12"
+                                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                               TextTrimming="CharacterEllipsis"/>
+                                                </StackPanel>
+                                                <Button Grid.Column="2" Padding="4" ToolTipService.ToolTip="Remove"
                                                         CommandParameter="{x:Bind}"
                                                         Click="RemoveApprover_Click">
                                                     <FontIcon Glyph="&#xE711;" FontSize="12"/>
@@ -563,14 +587,15 @@
                                 </StackPanel>
                             </StackPanel>
                         </StackPanel>
-
-                        <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,16,0,0">
-                            <Button Content="Back" Command="{x:Bind ViewModel.GoBackCommand}"/>
-                            <Button Content="{x:Bind ViewModel.NextSettingsButtonText, Mode=OneWay}" Style="{StaticResource AccentButtonStyle}"
-                                    Command="{x:Bind ViewModel.ProceedToPreviewCommand}"/>
-                        </StackPanel>
                     </StackPanel>
-                </ScrollViewer>
+                    </ScrollViewer>
+
+                    <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8" Margin="0,12,0,0">
+                        <Button Content="Back" Command="{x:Bind ViewModel.GoBackCommand}"/>
+                        <Button Content="{x:Bind ViewModel.NextSettingsButtonText, Mode=OneWay}" Style="{StaticResource AccentButtonStyle}"
+                                Command="{x:Bind ViewModel.ProceedToPreviewCommand}"/>
+                    </StackPanel>
+                </Grid>
 
                 <!-- Step 4: Preview -->
                 <Grid Visibility="{x:Bind ViewModel.CurrentStep, Mode=OneWay, Converter={StaticResource StepVisibilityConverter}, ConverterParameter=4}">
@@ -606,12 +631,12 @@
                                                             <StackPanel>
                                                                 <Grid Padding="8,4" Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}">
                                                                     <Grid.ColumnDefinitions>
-                                                                        <ColumnDefinition Width="2*"/>
+                                                                        <ColumnDefinition Width="1.5*"/>
                                                                         <ColumnDefinition Width="*"/>
-                                                                        <ColumnDefinition Width="*"/>
+                                                                        <ColumnDefinition Width="1.5*"/>
                                                                     </Grid.ColumnDefinitions>
-                                                                    <TextBlock Text="Setting" FontWeight="SemiBold"/>
-                                                                    <TextBlock Grid.Column="1" Text="Current" FontWeight="SemiBold"/>
+                                                                    <TextBlock Text="Setting" FontWeight="SemiBold" Margin="0,0,12,0"/>
+                                                                    <TextBlock Grid.Column="1" Text="Current" FontWeight="SemiBold" Margin="0,0,12,0"/>
                                                                     <TextBlock Grid.Column="2" Text="New Value" FontWeight="SemiBold"/>
                                                                 </Grid>
                                                                 <ItemsRepeater ItemsSource="{x:Bind Changes}">
@@ -619,13 +644,19 @@
                                                                         <DataTemplate x:DataType="models:SettingChangePreview">
                                                                             <Grid Padding="8,4">
                                                                                 <Grid.ColumnDefinitions>
-                                                                                    <ColumnDefinition Width="2*"/>
+                                                                                    <ColumnDefinition Width="1.5*"/>
                                                                                     <ColumnDefinition Width="*"/>
-                                                                                    <ColumnDefinition Width="*"/>
+                                                                                    <ColumnDefinition Width="1.5*"/>
                                                                                 </Grid.ColumnDefinitions>
-                                                                                <TextBlock Text="{x:Bind SettingName}" TextWrapping="Wrap"/>
-                                                                                <TextBlock Grid.Column="1" Text="{x:Bind CurrentValue}"/>
-                                                                                <TextBlock Grid.Column="2" Text="{x:Bind NewValue}" FontWeight="SemiBold"/>
+                                                                                <TextBlock Text="{x:Bind SettingName}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
+                                                                                           VerticalAlignment="Top" Margin="0,0,12,0"
+                                                                                           ToolTipService.ToolTip="{x:Bind SettingName}"/>
+                                                                                <TextBlock Grid.Column="1" Text="{x:Bind CurrentValue}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
+                                                                                           VerticalAlignment="Top" Margin="0,0,12,0"
+                                                                                           ToolTipService.ToolTip="{x:Bind CurrentValue}"/>
+                                                                                <TextBlock Grid.Column="2" Text="{x:Bind NewValue}" FontWeight="SemiBold" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
+                                                                                           VerticalAlignment="Top"
+                                                                                           ToolTipService.ToolTip="{x:Bind NewValue}"/>
                                                                             </Grid>
                                                                         </DataTemplate>
                                                                     </ItemsRepeater.ItemTemplate>
@@ -741,11 +772,19 @@
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <TextBlock Text="{x:Bind ViewModel.VersionString}" FontSize="11"
                            Foreground="{ThemeResource TextFillColorTertiaryBrush}" VerticalAlignment="Center"/>
                 <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}" Foreground="IndianRed"
                            VerticalAlignment="Center" TextWrapping="Wrap" Margin="16,0,0,0"/>
+                <Button Grid.Column="2" Click="FeedbackButton_Click" ToolTipService.ToolTip="Feedback"
+                        VerticalAlignment="Center" HorizontalAlignment="Right" Padding="10,4">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <FontIcon Glyph="&#xED15;" FontSize="14"/>
+                        <TextBlock Text="Feedback" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
             </Grid>
         </Border>
     </Grid>

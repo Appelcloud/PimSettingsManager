@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace BulkPimRoleSettings.Models;
@@ -27,7 +28,7 @@ public class PolicySettings
     public bool RequireJustificationOnActivation { get; set; }
     public bool RequireTicketOnActivation { get; set; }
     public bool RequireApprovalToActivate { get; set; }
-    public string[] Approvers { get; set; } = [];
+    public List<DirectoryUser> Approvers { get; set; } = new();
     public bool RequireAuthContextOnActivation { get; set; }
     public string? AuthContextClaimValue { get; set; }
 

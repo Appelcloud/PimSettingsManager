@@ -1,4 +1,3 @@
-using System.Linq;
 using BulkPimRoleSettings.Models;
 using BulkPimRoleSettings.ViewModels;
 using Microsoft.UI.Xaml;
@@ -35,25 +34,23 @@ public sealed partial class MainPage : Page
         Frame.Navigate(typeof(AboutPage));
     }
 
+    private void FeedbackButton_Click(object sender, RoutedEventArgs e)
+    {
+        Frame.Navigate(typeof(FeedbackPage));
+    }
+
     private async void ApproverSearch_TextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
     {
         if (args.Reason == AutoSuggestionBoxTextChangeReason.UserInput)
         {
             ViewModel.ApproverSearchQuery = sender.Text;
             await ViewModel.SearchApproversCommand.ExecuteAsync(null);
-            sender.ItemsSource = ViewModel.ApproverSearchResults.Select(u => u.ToString()).ToList();
         }
     }
 
     private void ApproverSearch_SuggestionChosen(AutoSuggestBox sender, AutoSuggestBoxSuggestionChosenEventArgs args)
     {
-        var selectedText = args.SelectedItem?.ToString();
-        if (string.IsNullOrEmpty(selectedText)) return;
-
-        var user = ViewModel.ApproverSearchResults
-            .FirstOrDefault(u => u.ToString() == selectedText);
-
-        if (user != null)
+        if (args.SelectedItem is DirectoryUser user)
         {
             ViewModel.AddApproverCommand.Execute(user);
             sender.Text = string.Empty;

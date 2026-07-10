@@ -1,11 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Threading;
 using System.Threading.Tasks;
 using BulkPimRoleSettings.Models;
 
@@ -14,6 +16,9 @@ namespace BulkPimRoleSettings.Services;
 public sealed class GraphPimService
 {
     private const string GraphBetaBase = "https://graph.microsoft.com/beta";
+    private const int MaxRetryAttempts = 3;
+    private const int MaxFetchConcurrency = 5;
+
     private readonly HttpClient _http;
     private readonly AuthService _authService;
     private readonly LogService _log = LogService.Instance;
@@ -21,44 +26,170 @@ public sealed class GraphPimService
     public GraphPimService(AuthService authService)
     {
         _authService = authService;
-        _http = new HttpClient();
+        _http = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
     }
 
-    private async Task<HttpClient> GetAuthenticatedClientAsync()
+    /// <summary>
+    /// Sends a Graph request using a per-request bearer token (thread-safe for
+    /// parallel calls — the shared client's default headers are never mutated)
+    /// and retries throttling/transient server errors (429/503/504), honoring
+    /// the Retry-After header when present.
+    /// </summary>
+    private async Task<HttpResponseMessage> SendWithRetryAsync(HttpMethod method, string url, string? jsonBody = null)
     {
-        var token = await _authService.GetValidTokenAsync();
-        if (string.IsNullOrEmpty(token))
-            throw new InvalidOperationException("No valid access token available.");
+        for (var attempt = 1; ; attempt++)
+        {
+            var token = await _authService.GetValidTokenAsync();
+            if (string.IsNullOrEmpty(token))
+                throw new InvalidOperationException("No valid access token available.");
 
-        _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        return _http;
+            using var request = new HttpRequestMessage(method, url);
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            if (jsonBody != null)
+                request.Content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
+
+            var response = await _http.SendAsync(request);
+
+            var isTransient = response.StatusCode is HttpStatusCode.TooManyRequests
+                or HttpStatusCode.ServiceUnavailable
+                or HttpStatusCode.GatewayTimeout;
+
+            if (!isTransient || attempt >= MaxRetryAttempts)
+                return response;
+
+            var delay = response.Headers.RetryAfter?.Delta ?? TimeSpan.FromSeconds(Math.Pow(2, attempt));
+            var statusCode = (int)response.StatusCode;
+            response.Dispose();
+
+            _log.Log(LogLevel.WARN, LogCategory.API,
+                $"Transient error {statusCode}. Retrying in {delay.TotalSeconds:N0}s (attempt {attempt}/{MaxRetryAttempts})...");
+            await Task.Delay(delay);
+        }
     }
 
-    private async Task<JsonNode?> GetAsync(string url)
+    private async Task<JsonNode?> ExecuteAsync(HttpMethod method, string url, string? jsonBody = null)
     {
-        var client = await GetAuthenticatedClientAsync();
-        _log.LogApiCall("GET", url);
+        _log.LogApiCall(method.Method, url, jsonBody);
 
-        var response = await client.GetAsync(url);
+        using var response = await SendWithRetryAsync(method, url, jsonBody);
         var body = await response.Content.ReadAsStringAsync();
         _log.LogApiResponse(url, (int)response.StatusCode, body);
 
-        response.EnsureSuccessStatusCode();
-        return JsonNode.Parse(body);
+        if (!response.IsSuccessStatusCode)
+        {
+            var graphError = TryGetGraphErrorMessage(body);
+            var message = graphError != null
+                ? $"Graph request failed ({(int)response.StatusCode}): {graphError}"
+                : $"Graph request failed ({(int)response.StatusCode} {response.StatusCode}).";
+            throw new HttpRequestException(message, null, response.StatusCode);
+        }
+
+        return string.IsNullOrWhiteSpace(body) ? null : JsonNode.Parse(body);
     }
 
-    private async Task<JsonNode?> PatchAsync(string url, string jsonBody)
+    private static string? TryGetGraphErrorMessage(string body)
     {
-        var client = await GetAuthenticatedClientAsync();
-        _log.LogApiCall("PATCH", url, jsonBody);
+        if (string.IsNullOrWhiteSpace(body)) return null;
+        try
+        {
+            return JsonNode.Parse(body)?["error"]?["message"]?.GetValue<string>();
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
 
-        var content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
-        var response = await client.PatchAsync(url, content);
-        var responseBody = await response.Content.ReadAsStringAsync();
-        _log.LogApiResponse(url, (int)response.StatusCode, responseBody);
+    private Task<JsonNode?> GetAsync(string url) => ExecuteAsync(HttpMethod.Get, url);
 
-        response.EnsureSuccessStatusCode();
-        return JsonNode.Parse(responseBody);
+    private Task<JsonNode?> PostAsync(string url, string jsonBody) => ExecuteAsync(HttpMethod.Post, url, jsonBody);
+
+    private Task<JsonNode?> PatchAsync(string url, string jsonBody) => ExecuteAsync(HttpMethod.Patch, url, jsonBody);
+
+    /// <summary>
+    /// Follows @odata.nextLink paging and returns items from every page.
+    /// Only follows links that stay on the Microsoft Graph host.
+    /// </summary>
+    private async Task<List<JsonNode>> GetPagedValuesAsync(string url)
+    {
+        var items = new List<JsonNode>();
+        var nextUrl = url;
+
+        while (!string.IsNullOrEmpty(nextUrl))
+        {
+            var result = await GetAsync(nextUrl);
+            var values = result?["value"]?.AsArray();
+            if (values != null)
+            {
+                foreach (var item in values)
+                {
+                    if (item != null) items.Add(item);
+                }
+            }
+
+            nextUrl = result?["@odata.nextLink"]?.GetValue<string>();
+            if (nextUrl != null && !nextUrl.StartsWith("https://graph.microsoft.com/", StringComparison.OrdinalIgnoreCase))
+            {
+                _log.Log(LogLevel.WARN, LogCategory.API, "Ignoring paging link pointing to an unexpected host.");
+                break;
+            }
+        }
+
+        return items;
+    }
+
+    /// <summary>Escapes a value for safe use inside an OData string literal.</summary>
+    private static string EscapeODataString(string value) => value.Replace("'", "''");
+
+    /// <summary>
+    /// Resolves directory object IDs (users or groups) to their display names / UPNs.
+    /// Used to enrich approver entries read from a policy, which may only contain IDs.
+    /// </summary>
+    public async Task<List<DirectoryUser>> ResolveDirectoryObjectsAsync(IEnumerable<string> ids)
+    {
+        var resolved = new List<DirectoryUser>();
+        var idList = ids.Where(i => !string.IsNullOrWhiteSpace(i)).Distinct().ToList();
+        if (idList.Count == 0) return resolved;
+
+        try
+        {
+            var payload = new Dictionary<string, object>
+            {
+                ["ids"] = idList,
+                ["types"] = new[] { "user", "group" }
+            };
+            var body = JsonSerializer.Serialize(payload);
+            var result = await PostAsync($"{GraphBetaBase}/directoryObjects/getByIds", body);
+            var values = result?["value"]?.AsArray();
+
+            if (values != null)
+            {
+                foreach (var item in values)
+                {
+                    if (item == null) continue;
+                    var id = item["id"]?.GetValue<string>();
+                    if (string.IsNullOrEmpty(id)) continue;
+
+                    var odataType = item["@odata.type"]?.GetValue<string>() ?? string.Empty;
+                    var isGroup = odataType.Contains("group", StringComparison.OrdinalIgnoreCase);
+
+                    resolved.Add(new DirectoryUser
+                    {
+                        Id = id,
+                        DisplayName = item["displayName"]?.GetValue<string>() ?? string.Empty,
+                        UserPrincipalName = item["userPrincipalName"]?.GetValue<string>() ?? string.Empty,
+                        Mail = item["mail"]?.GetValue<string>() ?? string.Empty,
+                        IsGroup = isGroup,
+                    });
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "Failed to resolve directory objects for approvers.");
+        }
+
+        return resolved;
     }
 
     #region Permission Check
@@ -70,12 +201,10 @@ public sealed class GraphPimService
             // Check if user can read role management policies (basic access test)
             // This endpoint requires a filter - use DirectoryRole scope which is always present
             var url = $"{GraphBetaBase}/policies/roleManagementPolicies?$filter=scopeId eq '/' and scopeType eq 'DirectoryRole'&$top=1";
-            var client = await GetAuthenticatedClientAsync();
             _log.LogApiCall("GET", url);
 
-            var response = await client.GetAsync(url);
-            var body = await response.Content.ReadAsStringAsync();
-            _log.LogApiResponse(url, (int)response.StatusCode, body);
+            using var response = await SendWithRetryAsync(HttpMethod.Get, url);
+            _log.LogApiResponse(url, (int)response.StatusCode);
 
             if (response.IsSuccessStatusCode)
             {
@@ -83,14 +212,14 @@ public sealed class GraphPimService
                 return (true, Array.Empty<string>());
             }
 
-            if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
+            if (response.StatusCode == HttpStatusCode.Forbidden)
             {
                 _log.Log(LogLevel.WARN, LogCategory.PERMISSION,
                     "User lacks required permissions. Status 403.");
                 return (false, new[] { "RoleManagementPolicy.ReadWrite.Directory" });
             }
 
-            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            if (response.StatusCode == HttpStatusCode.Unauthorized)
             {
                 _log.Log(LogLevel.WARN, LogCategory.PERMISSION,
                     "User is unauthorized. Token may be invalid. Status 401.");
@@ -98,7 +227,7 @@ public sealed class GraphPimService
             }
 
             _log.Log(LogLevel.WARN, LogCategory.PERMISSION,
-                $"Unexpected status: {response.StatusCode}. Response: {body}");
+                $"Unexpected status: {response.StatusCode}.");
             return (false, new[] { $"Unexpected error: {response.StatusCode}" });
         }
         catch (Exception ex)
@@ -118,22 +247,20 @@ public sealed class GraphPimService
 
         try
         {
-            // Fetch role definitions to map role definition IDs to display names
-            var roleDefinitions = await GetRoleDefinitionsAsync();
+            // Role definitions (ID -> name) and policy assignments (policy -> role)
+            // are independent lookups — fetch them concurrently.
+            var roleDefinitionsTask = GetRoleDefinitionsAsync();
+            var policyToRoleMapTask = GetPolicyAssignmentsAsync();
+            await Task.WhenAll(roleDefinitionsTask, policyToRoleMapTask);
 
-            // Fetch policy assignments to map policy IDs to role definition IDs
-            var policyToRoleMap = await GetPolicyAssignmentsAsync();
+            var roleDefinitions = roleDefinitionsTask.Result;
+            var policyToRoleMap = policyToRoleMapTask.Result;
 
             var url = $"{GraphBetaBase}/policies/roleManagementPolicies?$filter=scopeId eq '/' and scopeType eq 'DirectoryRole'&$expand=rules";
-            var result = await GetAsync(url);
-            var values = result?["value"]?.AsArray();
-
-            if (values == null) return policies;
+            var values = await GetPagedValuesAsync(url);
 
             foreach (var item in values)
             {
-                if (item == null) continue;
-
                 var policyId = item["id"]?.GetValue<string>() ?? string.Empty;
 
                 // Look up role definition ID from policy assignments
@@ -154,10 +281,6 @@ public sealed class GraphPimService
                     ScopeDisplayName = "Directory",
                     Category = PimCategory.EntraIdRoles
                 };
-
-                // Only include roles from the official Entra ID "All roles" list
-                if (!KnownEntraRoles.IsKnownRole(roleName))
-                    continue;
 
                 ParsePolicyRules(item, policy);
                 policies.Add(policy);
@@ -182,20 +305,15 @@ public sealed class GraphPimService
         try
         {
             var url = $"{GraphBetaBase}/policies/roleManagementPolicyAssignments?$filter=scopeId eq '/' and scopeType eq 'DirectoryRole'&$select=policyId,roleDefinitionId";
-            var result = await GetAsync(url);
-            var values = result?["value"]?.AsArray();
+            var values = await GetPagedValuesAsync(url);
 
-            if (values != null)
+            foreach (var item in values)
             {
-                foreach (var item in values)
+                var policyId = item["policyId"]?.GetValue<string>();
+                var roleDefinitionId = item["roleDefinitionId"]?.GetValue<string>();
+                if (!string.IsNullOrEmpty(policyId) && !string.IsNullOrEmpty(roleDefinitionId))
                 {
-                    if (item == null) continue;
-                    var policyId = item["policyId"]?.GetValue<string>();
-                    var roleDefinitionId = item["roleDefinitionId"]?.GetValue<string>();
-                    if (!string.IsNullOrEmpty(policyId) && !string.IsNullOrEmpty(roleDefinitionId))
-                    {
-                        map[policyId] = roleDefinitionId;
-                    }
+                    map[policyId] = roleDefinitionId;
                 }
             }
 
@@ -216,20 +334,15 @@ public sealed class GraphPimService
         try
         {
             var url = $"{GraphBetaBase}/roleManagement/directory/roleDefinitions?$select=id,displayName";
-            var result = await GetAsync(url);
-            var values = result?["value"]?.AsArray();
+            var values = await GetPagedValuesAsync(url);
 
-            if (values != null)
+            foreach (var item in values)
             {
-                foreach (var item in values)
+                var id = item["id"]?.GetValue<string>();
+                var displayName = item["displayName"]?.GetValue<string>();
+                if (!string.IsNullOrEmpty(id) && !string.IsNullOrEmpty(displayName))
                 {
-                    if (item == null) continue;
-                    var id = item["id"]?.GetValue<string>();
-                    var displayName = item["displayName"]?.GetValue<string>();
-                    if (!string.IsNullOrEmpty(id) && !string.IsNullOrEmpty(displayName))
-                    {
-                        roleMap[id] = displayName;
-                    }
+                    roleMap[id] = displayName;
                 }
             }
 
@@ -289,7 +402,7 @@ public sealed class GraphPimService
 
         try
         {
-            var url = $"{GraphBetaBase}/privilegedAccess/azureResources/resources/{resourceId}/roleSettings";
+            var url = $"{GraphBetaBase}/privilegedAccess/azureResources/resources/{Uri.EscapeDataString(resourceId)}/roleSettings";
             var result = await GetAsync(url);
             var values = result?["value"]?.AsArray();
 
@@ -336,16 +449,16 @@ public sealed class GraphPimService
         // Step 1: Discover PIM-onboarded group IDs
         // Equivalent of GET https://api.azrbac.mspim.azure.com/api/v2/privilegedAccess/aadGroups/resources
         var url = $"{GraphBetaBase}/identityGovernance/privilegedAccess/group/resources?$select=id&$top=999";
-        var result = await GetAsync(url);
-        var values = result?["value"]?.AsArray();
+        var values = await GetPagedValuesAsync(url);
 
-        if (values == null || values.Count == 0) return groups;
+        if (values.Count == 0) return groups;
 
         var groupIds = new List<string>();
         foreach (var item in values)
         {
-            var id = item?["id"]?.GetValue<string>();
-            if (!string.IsNullOrEmpty(id)) groupIds.Add(id);
+            var id = item["id"]?.GetValue<string>();
+            // Group IDs are interpolated into $filter clauses below — only accept well-formed GUIDs.
+            if (!string.IsNullOrEmpty(id) && Guid.TryParse(id, out _)) groupIds.Add(id);
         }
 
         _log.Log(LogLevel.INFO, LogCategory.API, $"Discovered {groupIds.Count} PIM-onboarded groups.");
@@ -390,20 +503,32 @@ public sealed class GraphPimService
     public async Task<List<PimRolePolicy>> GetGroupPoliciesAsync(IEnumerable<AzureScope> selectedGroups)
     {
         var policies = new List<PimRolePolicy>();
+        var policiesLock = new object();
 
         try
         {
-            foreach (var group in selectedGroups)
+            // Each group is an independent Graph call — run them with bounded
+            // parallelism to keep load times flat as group count grows.
+            using var throttler = new SemaphoreSlim(MaxFetchConcurrency);
+            var tasks = selectedGroups.Select(async group =>
             {
+                await throttler.WaitAsync();
                 try
                 {
+                    // Guard against malformed IDs reaching the $filter clause.
+                    if (!Guid.TryParse(group.Id, out _))
+                    {
+                        _log.Log(LogLevel.WARN, LogCategory.API, $"Skipping group with non-GUID ID: '{group.DisplayName}'.");
+                        return;
+                    }
+
                     // Per Microsoft Graph docs, PIM for Groups requires scopeId (group ID) in the filter.
                     // GET /policies/roleManagementPolicyAssignments?$filter=scopeId eq '{groupId}' and scopeType eq 'Group'
                     var url = $"{GraphBetaBase}/policies/roleManagementPolicyAssignments?$filter=scopeId eq '{group.Id}' and scopeType eq 'Group'&$expand=policy($expand=rules)&$select=policyId,roleDefinitionId,policy";
                     var result = await GetAsync(url);
                     var assignments = result?["value"]?.AsArray();
 
-                    if (assignments == null) continue;
+                    if (assignments == null) return;
 
                     foreach (var assignment in assignments)
                     {
@@ -427,14 +552,26 @@ public sealed class GraphPimService
                         };
 
                         ParsePolicyRules(policyNode, policy);
-                        policies.Add(policy);
+                        lock (policiesLock)
+                        {
+                            policies.Add(policy);
+                        }
                     }
                 }
                 catch (Exception ex)
                 {
                     _log.LogError(ex, $"Failed to get policies for group '{group.DisplayName}' ({group.Id}).");
                 }
-            }
+                finally
+                {
+                    throttler.Release();
+                }
+            }).ToList();
+
+            await Task.WhenAll(tasks);
+
+            // Deterministic ordering regardless of task completion order.
+            policies.Sort((a, b) => string.Compare(a.RoleDisplayName, b.RoleDisplayName, StringComparison.OrdinalIgnoreCase));
 
             _log.Log(LogLevel.SUCCESS, LogCategory.API, $"Retrieved {policies.Count} group policies.");
         }
@@ -453,13 +590,37 @@ public sealed class GraphPimService
 
     public async Task<List<DirectoryUser>> SearchUsersAsync(string query)
     {
-        var users = new List<DirectoryUser>();
-        if (string.IsNullOrWhiteSpace(query) || query.Length < 2) return users;
+        var results = new List<DirectoryUser>();
+        if (string.IsNullOrWhiteSpace(query) || query.Length < 2) return results;
 
+        // Escape single quotes for the OData string literal first (prevents
+        // filter injection), then URL-encode the whole value.
+        var encoded = Uri.EscapeDataString(EscapeODataString(query.Trim()));
+
+        // Search users and groups concurrently — independent requests.
+        var userTask = SearchDirectoryAsync(
+            $"{GraphBetaBase}/users?$filter=startswith(displayName,'{encoded}') or startswith(userPrincipalName,'{encoded}')&$top=10&$select=id,displayName,userPrincipalName",
+            isGroup: false, query);
+        var groupTask = SearchDirectoryAsync(
+            $"{GraphBetaBase}/groups?$filter=startswith(displayName,'{encoded}') or startswith(mail,'{encoded}')&$top=10&$select=id,displayName,mail",
+            isGroup: true, query);
+
+        await Task.WhenAll(userTask, groupTask);
+        results.AddRange(userTask.Result);
+        results.AddRange(groupTask.Result);
+
+        // Users first, then groups; both alphabetical for a predictable list.
+        return results
+            .OrderBy(r => r.IsGroup)
+            .ThenBy(r => r.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private async Task<List<DirectoryUser>> SearchDirectoryAsync(string url, bool isGroup, string query)
+    {
+        var results = new List<DirectoryUser>();
         try
         {
-            var encoded = Uri.EscapeDataString(query);
-            var url = $"{GraphBetaBase}/users?$filter=startswith(displayName,'{encoded}') or startswith(userPrincipalName,'{encoded}')&$top=10&$select=id,displayName,userPrincipalName";
             var result = await GetAsync(url);
             var values = result?["value"]?.AsArray();
 
@@ -468,21 +629,22 @@ public sealed class GraphPimService
                 foreach (var item in values)
                 {
                     if (item == null) continue;
-                    users.Add(new DirectoryUser
+                    results.Add(new DirectoryUser
                     {
                         Id = item["id"]?.GetValue<string>() ?? string.Empty,
                         DisplayName = item["displayName"]?.GetValue<string>() ?? string.Empty,
-                        UserPrincipalName = item["userPrincipalName"]?.GetValue<string>() ?? string.Empty,
+                        UserPrincipalName = isGroup ? string.Empty : item["userPrincipalName"]?.GetValue<string>() ?? string.Empty,
+                        Mail = isGroup ? item["mail"]?.GetValue<string>() ?? string.Empty : string.Empty,
+                        IsGroup = isGroup,
                     });
                 }
             }
         }
         catch (Exception ex)
         {
-            _log.LogError(ex, $"User search failed for query: {query}");
+            _log.LogError(ex, $"{(isGroup ? "Group" : "User")} search failed for query: {query}");
         }
-
-        return users;
+        return results;
     }
 
     #endregion
@@ -501,17 +663,18 @@ public sealed class GraphPimService
                 return true;
             }
 
-            var url = $"{GraphBetaBase}/policies/roleManagementPolicies/{rolePolicy.PolicyId}/rules";
-
-            foreach (var rule in rules)
+            // Update all rules in a single PATCH on the policy instead of one
+            // request per rule — dramatically fewer round-trips per role/group.
+            var url = $"{GraphBetaBase}/policies/roleManagementPolicies/{rolePolicy.PolicyId}";
+            var body = JsonSerializer.Serialize(new Dictionary<string, object>
             {
-                var ruleUrl = $"{url}/{rule.RuleId}";
-                var body = rule.ToJson();
-                await PatchAsync(ruleUrl, body);
+                ["rules"] = rules.Select(r => r.ToJsonObject()).ToList()
+            });
 
-                _log.Log(LogLevel.SUCCESS, LogCategory.SETTINGS,
-                    $"Updated rule '{rule.RuleId}' for '{rolePolicy.RoleDisplayName}'");
-            }
+            await PatchAsync(url, body);
+
+            _log.Log(LogLevel.SUCCESS, LogCategory.SETTINGS,
+                $"Updated {rules.Count} rules for '{rolePolicy.RoleDisplayName}' in a single request");
 
             return true;
         }
@@ -619,25 +782,44 @@ public sealed class GraphPimService
         var isApprovalRequired = rule["setting"]?["isApprovalRequired"]?.GetValue<bool>() ?? false;
         policy.CurrentSettings.RequireApprovalToActivate = isApprovalRequired;
 
-        var approvers = new List<string>();
+        var approvers = new List<DirectoryUser>();
         var stages = rule["setting"]?["approvalStages"]?.AsArray();
         if (stages != null)
         {
             foreach (var stage in stages)
             {
                 var primaryApprovers = stage?["primaryApprovers"]?.AsArray();
-                if (primaryApprovers != null)
+                if (primaryApprovers == null) continue;
+
+                foreach (var approver in primaryApprovers)
                 {
-                    foreach (var approver in primaryApprovers)
+                    if (approver == null) continue;
+
+                    // Approvers are stored as subjectSet objects (singleUser / groupMembers).
+                    // The identifier lives in userId, groupId, or id depending on the type.
+                    var odataType = approver["@odata.type"]?.GetValue<string>() ?? string.Empty;
+                    var id = approver["userId"]?.GetValue<string>()
+                             ?? approver["groupId"]?.GetValue<string>()
+                             ?? approver["id"]?.GetValue<string>();
+                    if (string.IsNullOrEmpty(id)) continue;
+
+                    var description = approver["description"]?.GetValue<string>();
+                    var isGroup = odataType.Contains("group", StringComparison.OrdinalIgnoreCase);
+
+                    approvers.Add(new DirectoryUser
                     {
-                        var upn = approver?["userPrincipalName"]?.GetValue<string>();
-                        if (!string.IsNullOrEmpty(upn))
-                            approvers.Add(upn);
-                    }
+                        Id = id,
+                        DisplayName = string.IsNullOrWhiteSpace(description)
+                            ? (isGroup ? "Group" : "User")
+                            : description,
+                        UserPrincipalName = isGroup ? string.Empty : (description ?? string.Empty),
+                        Mail = isGroup ? (description ?? string.Empty) : string.Empty,
+                        IsGroup = isGroup,
+                    });
                 }
             }
         }
-        policy.CurrentSettings.Approvers = approvers.ToArray();
+        policy.CurrentSettings.Approvers = approvers;
     }
 
     private void ParseNotificationRule(JsonNode rule, string ruleId, PimRolePolicy policy)
@@ -701,20 +883,15 @@ public sealed class GraphPimService
         try
         {
             var url = $"{GraphBetaBase}/identity/conditionalAccess/authenticationContextClassReferences";
-            var result = await GetAsync(url);
-            var values = result?["value"]?.AsArray();
+            var values = await GetPagedValuesAsync(url);
 
-            if (values != null)
+            foreach (var item in values)
             {
-                foreach (var item in values)
+                contexts.Add(new AuthContextItem
                 {
-                    if (item == null) continue;
-                    contexts.Add(new AuthContextItem
-                    {
-                        Id = item["id"]?.GetValue<string>() ?? string.Empty,
-                        DisplayName = item["displayName"]?.GetValue<string>() ?? string.Empty
-                    });
-                }
+                    Id = item["id"]?.GetValue<string>() ?? string.Empty,
+                    DisplayName = item["displayName"]?.GetValue<string>() ?? string.Empty
+                });
             }
 
             _log.Log(LogLevel.SUCCESS, LogCategory.API, $"Retrieved {contexts.Count} authentication contexts.");
@@ -975,12 +1152,33 @@ public sealed class GraphPimService
         if (string.IsNullOrWhiteSpace(approversRaw))
             return Array.Empty<object>();
 
-        // approversRaw contains semicolon-separated user IDs (GUIDs)
-        var ids = approversRaw.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        var approvers = ids.Select(id => new Dictionary<string, object>
+        // approversRaw contains semicolon-separated approver entries.
+        // Each entry is "user:{id}" or "group:{id}"; a bare "{id}" is treated as a user
+        // for backward compatibility.
+        var entries = approversRaw.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var approvers = entries.Select(entry =>
         {
-            ["@odata.type"] = "#microsoft.graph.singleUser",
-            ["userId"] = id
+            string type = "user";
+            string id = entry;
+
+            var separatorIndex = entry.IndexOf(':');
+            if (separatorIndex > 0)
+            {
+                type = entry.Substring(0, separatorIndex).Trim().ToLowerInvariant();
+                id = entry.Substring(separatorIndex + 1).Trim();
+            }
+
+            return type == "group"
+                ? new Dictionary<string, object>
+                {
+                    ["@odata.type"] = "#microsoft.graph.groupMembers",
+                    ["groupId"] = id
+                }
+                : new Dictionary<string, object>
+                {
+                    ["@odata.type"] = "#microsoft.graph.singleUser",
+                    ["userId"] = id
+                };
         }).ToArray();
 
         return new object[]
@@ -1032,15 +1230,18 @@ public class PolicyRuleUpdate
     public string ODataType { get; set; } = string.Empty;
     public Dictionary<string, object> Properties { get; set; } = new();
 
-    public string ToJson()
+    public Dictionary<string, object> ToJsonObject()
     {
-        var obj = new Dictionary<string, object>(Properties)
+        return new Dictionary<string, object>(Properties)
         {
             ["@odata.type"] = ODataType,
             ["id"] = RuleId
         };
+    }
 
-        return JsonSerializer.Serialize(obj, new JsonSerializerOptions
+    public string ToJson()
+    {
+        return JsonSerializer.Serialize(ToJsonObject(), new JsonSerializerOptions
         {
             WriteIndented = false,
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase

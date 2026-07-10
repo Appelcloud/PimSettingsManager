@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Reflection;
+using System.Threading;
 using System.Threading.Tasks;
 using BulkPimRoleSettings.Models;
 using BulkPimRoleSettings.Services;
@@ -92,6 +93,11 @@ public partial class MainViewModel : ObservableObject
 
     // Settings
     [ObservableProperty] public partial BulkEditSettings EditSettings { get; set; }
+
+    // Indicates the settings editor is pre-populated from a single role/group's current
+    // configuration. When multiple are selected, defaults are shown instead.
+    [ObservableProperty] public partial bool IsSingleSelectionSettings { get; set; }
+    [ObservableProperty] public partial string SettingsSourceHint { get; set; } = string.Empty;
 
     // Expiration dropdowns — index maps: 0=15d, 1=30d, 2=90d, 3=180d, 4=365d
     [ObservableProperty] public partial int EligibleExpirationIndex { get; set; }
@@ -222,6 +228,7 @@ public partial class MainViewModel : ObservableObject
     {
         IsBusy = true;
         GroupsErrorMessage = string.Empty;
+        StatusMessage = "Loading PIM groups...";
 
         try
         {
@@ -229,6 +236,8 @@ public partial class MainViewModel : ObservableObject
             AvailableGroups.Clear();
             SelectedGroups.Clear();
             foreach (var g in groups) AvailableGroups.Add(g);
+
+            StatusMessage = $"Found {groups.Count} PIM-enabled group(s).";
 
             if (groups.Count == 0)
             {
@@ -280,7 +289,10 @@ public partial class MainViewModel : ObservableObject
             {
                 StatusMessage = "Loading Entra ID role policies...";
                 var policies = await _graphService.GetEntraIdRolePoliciesAsync();
-                foreach (var p in policies) RolePolicies.Add(p);
+                foreach (var p in policies
+                    .Where(p => !string.Equals(p.RoleDisplayName, "User", StringComparison.OrdinalIgnoreCase))
+                    .OrderBy(p => p.RoleDisplayName, StringComparer.OrdinalIgnoreCase))
+                    RolePolicies.Add(p);
             }
             catch (Exception ex)
             {
@@ -413,6 +425,7 @@ public partial class MainViewModel : ObservableObject
         StatusMessage = $"{CurrentPhaseTitle}: {selectedCount} role(s) selected. Loading authentication contexts...";
         EditSettings = new BulkEditSettings();
         SelectedApprovers.Clear();
+        SelectedAuthContext = null;
         PrePopulateSettingsFromCurrentValues();
 
         // Load auth contexts
@@ -430,75 +443,152 @@ public partial class MainViewModel : ObservableObject
             }
         }
 
+        // Reflect the current authentication context in the dropdown (single selection only)
+        if (!string.IsNullOrEmpty(EditSettings.AuthContextClaimValue))
+        {
+            SelectedAuthContext = AuthContextItems.FirstOrDefault(c => c.Id == EditSettings.AuthContextClaimValue);
+        }
+
+        // Populate current approvers when a single role/group is selected and approval is required.
+        await LoadCurrentApproversAsync();
+
         StatusMessage = $"{CurrentPhaseTitle}: {selectedCount} role(s) selected. Configure settings.";
         CurrentStep = 3;
+    }
+
+    private async Task LoadCurrentApproversAsync()
+    {
+        SelectedApprovers.Clear();
+
+        var phaseCategory = CurrentPhaseCategory;
+        var selected = RolePolicies.Where(r => r.IsSelected && r.Category == phaseCategory).ToList();
+
+        // Only pre-load approvers for a single selection with approval required.
+        if (selected.Count != 1 || !EditSettings.RequireApprovalToActivate)
+            return;
+
+        var currentApprovers = selected[0].CurrentSettings.Approvers;
+        if (currentApprovers == null || currentApprovers.Count == 0)
+            return;
+
+        // Resolve display details for approvers that only carry an ID (no name or
+        // identifying secondary text such as UPN/email).
+        var needsResolution = currentApprovers
+            .Where(a => string.IsNullOrWhiteSpace(a.DisplayName)
+                        || string.IsNullOrWhiteSpace(a.SecondaryText)
+                        || a.DisplayName == "User" || a.DisplayName == "Group")
+            .Select(a => a.Id)
+            .ToList();
+
+        var resolvedLookup = new Dictionary<string, DirectoryUser>();
+        if (needsResolution.Count > 0)
+        {
+            try
+            {
+                var resolved = await _graphService.ResolveDirectoryObjectsAsync(needsResolution);
+                foreach (var user in resolved)
+                    resolvedLookup[user.Id] = user;
+            }
+            catch (Exception ex)
+            {
+                _log.LogError(ex, "Failed to resolve approver display names.");
+            }
+        }
+
+        foreach (var approver in currentApprovers)
+        {
+            var display = approver;
+            if (resolvedLookup.TryGetValue(approver.Id, out var resolved))
+            {
+                display = new DirectoryUser
+                {
+                    Id = approver.Id,
+                    IsGroup = resolved.IsGroup || approver.IsGroup,
+                    DisplayName = !string.IsNullOrWhiteSpace(resolved.DisplayName) ? resolved.DisplayName : approver.DisplayName,
+                    UserPrincipalName = !string.IsNullOrWhiteSpace(resolved.UserPrincipalName)
+                        ? resolved.UserPrincipalName
+                        : approver.UserPrincipalName,
+                    Mail = !string.IsNullOrWhiteSpace(resolved.Mail) ? resolved.Mail : approver.Mail,
+                };
+            }
+
+            SelectedApprovers.Add(display);
+        }
+
+        RebuildApproversRaw();
+        OnPropertyChanged(nameof(IsApproverSearchVisible));
     }
 
     private void PrePopulateSettingsFromCurrentValues()
     {
         var phaseCategory = CurrentPhaseCategory;
         var selected = RolePolicies.Where(r => r.IsSelected && r.Category == phaseCategory).ToList();
-        if (selected.Count == 0) return;
 
-        // Activation "On activation, require" radio buttons
-        var mfaValues = selected.Select(r => r.CurrentSettings.RequireMfaOnActivation).Distinct().ToList();
-        var authCtxValues = selected.Select(r => r.CurrentSettings.RequireAuthContextOnActivation).Distinct().ToList();
-        if (mfaValues.Count == 1 && authCtxValues.Count == 1)
+        // Only pre-populate from current values when exactly one role/group is selected.
+        // For multiple selections, keep default settings to avoid conflicting values.
+        if (selected.Count != 1)
         {
-            if (mfaValues[0])
-            {
-                EditSettings.RequireMfaOnActivation = true;
-                EditSettings.RequireNoneOnActivation = false;
-                EditSettings.RequireAuthContextOnActivation = false;
-            }
-            else if (authCtxValues[0])
-            {
-                EditSettings.RequireAuthContextOnActivation = true;
-                EditSettings.RequireNoneOnActivation = false;
-                EditSettings.RequireMfaOnActivation = false;
-            }
-            else
-            {
-                EditSettings.RequireNoneOnActivation = true;
-                EditSettings.RequireMfaOnActivation = false;
-                EditSettings.RequireAuthContextOnActivation = false;
-            }
+            IsSingleSelectionSettings = false;
+            SettingsSourceHint = selected.Count > 1
+                ? $"{selected.Count} items selected. Showing default settings — configure the values you want applied to all selected items."
+                : "Showing default settings.";
+            OnPropertyChanged(nameof(IsEligibleExpirationVisible));
+            OnPropertyChanged(nameof(IsActiveExpirationVisible));
+            OnPropertyChanged(nameof(IsApproverSearchVisible));
+            return;
         }
 
-        var justValues = selected.Select(r => r.CurrentSettings.RequireJustificationOnActivation).Distinct().ToList();
+        IsSingleSelectionSettings = true;
+        SettingsSourceHint = $"Showing the current PIM policy configured for \"{selected[0].RoleDisplayName}\". Adjust any values before applying.";
 
-        var ticketValues = selected.Select(r => r.CurrentSettings.RequireTicketOnActivation).Distinct().ToList();
-
-        var approvalValues = selected.Select(r => r.CurrentSettings.RequireApprovalToActivate).Distinct().ToList();
-
-        var permEligibleValues = selected.Select(r => r.CurrentSettings.AllowPermanentEligibleAssignment).Distinct().ToList();
-
-        var permActiveValues = selected.Select(r => r.CurrentSettings.AllowPermanentActiveAssignment).Distinct().ToList();
-
-        var mfaActiveValues = selected.Select(r => r.CurrentSettings.RequireMfaOnActiveAssignment).Distinct().ToList();
-
-        var justActiveValues = selected.Select(r => r.CurrentSettings.RequireJustificationOnActiveAssignment).Distinct().ToList();
+        var current = selected[0].CurrentSettings;
 
         // Activation max duration
-        var durationValues = selected.Select(r => r.CurrentSettings.ActivationMaxDurationHours).Distinct().ToList();
-        if (durationValues.Count == 1)
-            EditSettings.ActivationMaxDurationHours = durationValues[0];
+        EditSettings.ActivationMaxDurationHours = current.ActivationMaxDurationHours;
 
-        // Expire eligible days
-        var expEligibleValues = selected.Select(r => r.CurrentSettings.ExpireEligibleAfterDays).Distinct().ToList();
-        if (expEligibleValues.Count == 1 && expEligibleValues[0].HasValue)
+        // Activation "On activation, require" radio buttons
+        if (current.RequireMfaOnActivation)
         {
-            EditSettings.ExpireEligibleAfterDays = expEligibleValues[0]!.Value;
-            EligibleExpirationIndex = DaysToExpirationIndex(expEligibleValues[0]!.Value);
+            EditSettings.RequireMfaOnActivation = true;
+            EditSettings.RequireNoneOnActivation = false;
+            EditSettings.RequireAuthContextOnActivation = false;
+        }
+        else if (current.RequireAuthContextOnActivation)
+        {
+            EditSettings.RequireAuthContextOnActivation = true;
+            EditSettings.RequireNoneOnActivation = false;
+            EditSettings.RequireMfaOnActivation = false;
+            EditSettings.AuthContextClaimValue = current.AuthContextClaimValue ?? string.Empty;
+        }
+        else
+        {
+            EditSettings.RequireNoneOnActivation = true;
+            EditSettings.RequireMfaOnActivation = false;
+            EditSettings.RequireAuthContextOnActivation = false;
         }
 
-        // Expire active days
-        var expActiveValues = selected.Select(r => r.CurrentSettings.ExpireActiveAfterDays).Distinct().ToList();
-        if (expActiveValues.Count == 1 && expActiveValues[0].HasValue)
+        // Other activation requirements
+        EditSettings.RequireJustificationOnActivation = current.RequireJustificationOnActivation;
+        EditSettings.RequireTicketOnActivation = current.RequireTicketOnActivation;
+        EditSettings.RequireApprovalToActivate = current.RequireApprovalToActivate;
+
+        // Assignment
+        EditSettings.AllowPermanentEligibleAssignment = current.AllowPermanentEligibleAssignment;
+        if (current.ExpireEligibleAfterDays.HasValue)
         {
-            EditSettings.ExpireActiveAfterDays = expActiveValues[0]!.Value;
-            ActiveExpirationIndex = DaysToExpirationIndex(expActiveValues[0]!.Value);
+            EditSettings.ExpireEligibleAfterDays = current.ExpireEligibleAfterDays.Value;
+            EligibleExpirationIndex = DaysToExpirationIndex(current.ExpireEligibleAfterDays.Value);
         }
+
+        EditSettings.AllowPermanentActiveAssignment = current.AllowPermanentActiveAssignment;
+        if (current.ExpireActiveAfterDays.HasValue)
+        {
+            EditSettings.ExpireActiveAfterDays = current.ExpireActiveAfterDays.Value;
+            ActiveExpirationIndex = DaysToExpirationIndex(current.ExpireActiveAfterDays.Value);
+        }
+
+        EditSettings.RequireMfaOnActiveAssignment = current.RequireMfaOnActiveAssignment;
+        EditSettings.RequireJustificationOnActiveAssignment = current.RequireJustificationOnActiveAssignment;
 
         // Notify visibility
         OnPropertyChanged(nameof(IsEligibleExpirationVisible));
@@ -510,9 +600,15 @@ public partial class MainViewModel : ObservableObject
 
     #region Settings & Approver Search
 
+    private int _approverSearchVersion;
+
     [RelayCommand]
     private async Task SearchApproversAsync()
     {
+        // Version stamp guards against out-of-order results: if a newer search
+        // starts while this one is in flight, the stale response is discarded.
+        var version = Interlocked.Increment(ref _approverSearchVersion);
+
         if (string.IsNullOrWhiteSpace(ApproverSearchQuery) || ApproverSearchQuery.Length < 2)
         {
             ApproverSearchResults.Clear();
@@ -522,6 +618,8 @@ public partial class MainViewModel : ObservableObject
         try
         {
             var results = await _graphService.SearchUsersAsync(ApproverSearchQuery);
+            if (version != Volatile.Read(ref _approverSearchVersion)) return;
+
             ApproverSearchResults.Clear();
             foreach (var user in results) ApproverSearchResults.Add(user);
         }
@@ -560,7 +658,10 @@ public partial class MainViewModel : ObservableObject
 
     private void RebuildApproversRaw()
     {
-        EditSettings.ApproversRaw = string.Join(";", SelectedApprovers.Select(a => a.Id));
+        // Encode each approver with its type so groups are applied as groupMembers
+        // and users as singleUser. Format: "user:{id}" or "group:{id}".
+        EditSettings.ApproversRaw = string.Join(";",
+            SelectedApprovers.Select(a => $"{(a.IsGroup ? "group" : "user")}:{a.Id}"));
     }
 
     partial void OnSelectedAuthContextChanged(AuthContextItem? value)
@@ -621,6 +722,20 @@ public partial class MainViewModel : ObservableObject
     {
         ErrorMessage = string.Empty;
 
+        // Validate: approval requires at least one approver
+        if (EditSettings.RequireApprovalToActivate && SelectedApprovers.Count == 0)
+        {
+            ErrorMessage = "Please select at least one approver when 'Require approval to activate' is enabled.";
+            return;
+        }
+
+        // Validate: auth context requires a selection
+        if (EditSettings.RequireAuthContextOnActivation && SelectedAuthContext == null)
+        {
+            ErrorMessage = "Please select an authentication context when 'Conditional Access authentication context' is enabled.";
+            return;
+        }
+
         // Save settings for the current phase
         PhaseSettings[CurrentPhaseCategory] = EditSettings;
         PhaseApprovers[CurrentPhaseCategory] = SelectedApprovers.ToList();
@@ -674,6 +789,56 @@ public partial class MainViewModel : ObservableObject
                 role.CurrentSettings.RequireApprovalToActivate, settings.RequireApprovalToActivate);
             AddBoolPreview(role, "Require Auth Context on Activation",
                 role.CurrentSettings.RequireAuthContextOnActivation, settings.RequireAuthContextOnActivation);
+
+            // Authentication context — show the selected context whenever it is (or was) required.
+            if (settings.RequireAuthContextOnActivation || role.CurrentSettings.RequireAuthContextOnActivation)
+            {
+                var currentAuth = role.CurrentSettings.RequireAuthContextOnActivation
+                    ? FormatAuthContext(role.CurrentSettings.AuthContextClaimValue)
+                    : "None";
+
+                var newAuth = settings.RequireAuthContextOnActivation
+                    ? FormatAuthContext(settings.AuthContextClaimValue)
+                    : "None";
+
+                if (currentAuth != newAuth)
+                {
+                    PreviewChanges.Add(new SettingChangePreview
+                    {
+                        RoleName = role.RoleDisplayName,
+                        SettingName = "Authentication Context",
+                        CurrentValue = currentAuth,
+                        NewValue = newAuth
+                    });
+                }
+            }
+
+            // Approver(s) — show names/details whenever approval is (or was) required.
+            if (settings.RequireApprovalToActivate || role.CurrentSettings.RequireApprovalToActivate)
+            {
+                var currentApprovers = role.CurrentSettings.RequireApprovalToActivate
+                    ? role.CurrentSettings.Approvers
+                    : new List<DirectoryUser>();
+
+                var newApprovers = settings.RequireApprovalToActivate
+                    && PhaseApprovers.TryGetValue(role.Category, out var approvers)
+                        ? approvers
+                        : new List<DirectoryUser>();
+
+                var currentText = FormatApprovers(currentApprovers);
+                var newText = FormatApprovers(newApprovers);
+
+                if (currentText != newText)
+                {
+                    PreviewChanges.Add(new SettingChangePreview
+                    {
+                        RoleName = role.RoleDisplayName,
+                        SettingName = "Approver(s)",
+                        CurrentValue = currentText,
+                        NewValue = newText
+                    });
+                }
+            }
 
             AddBoolPreview(role, "Allow Permanent Eligible Assignment",
                 role.CurrentSettings.AllowPermanentEligibleAssignment, settings.AllowPermanentEligibleAssignment);
@@ -753,6 +918,28 @@ public partial class MainViewModel : ObservableObject
         });
     }
 
+    private string FormatAuthContext(string? claimValue)
+    {
+        if (string.IsNullOrWhiteSpace(claimValue))
+            return "None";
+
+        var match = AuthContextItems.FirstOrDefault(c => c.Id == claimValue);
+        return match != null ? match.ToString() : claimValue;
+    }
+
+    private static string FormatApprovers(List<DirectoryUser>? approvers)
+    {
+        if (approvers == null || approvers.Count == 0)
+            return "None";
+
+        // One approver per line: "Display Name (detail) — User/Group".
+        return string.Join(Environment.NewLine, approvers.Select(a =>
+        {
+            var detail = string.IsNullOrWhiteSpace(a.SecondaryText) ? string.Empty : $" ({a.SecondaryText})";
+            return $"{a.DisplayName}{detail} — {a.TypeLabel}";
+        }));
+    }
+
     #endregion
 
     #region Apply
@@ -803,54 +990,23 @@ public partial class MainViewModel : ObservableObject
         _log.Log(LogLevel.INFO, LogCategory.SETTINGS,
             $"Starting bulk apply to {ApplyTotal} roles...");
 
-        PimCategory? currentCategory = null;
+        // Apply to roles concurrently (bounded) — each role is a single PATCH,
+        // so parallelizing cuts total time dramatically vs. one-at-a-time.
+        const int maxConcurrency = 5;
+        using var throttler = new SemaphoreSlim(maxConcurrency);
 
+        ApplyStatus = $"Applying changes... 0/{ApplyTotal}";
+
+        var tasks = new List<Task>(orderedRoles.Count);
         for (int i = 0; i < orderedRoles.Count; i++)
         {
             var role = orderedRoles[i];
             var result = AppliedRoleResults[i];
-
-            // Indicate category transition
-            if (role.Category != currentCategory)
-            {
-                currentCategory = role.Category;
-                ApplyStatus = $"— {currentCategory.Value.ToDisplayName()} —";
-                _log.Log(LogLevel.INFO, LogCategory.SETTINGS, $"Processing category: {currentCategory.Value.ToDisplayName()}");
-            }
-
-            _log.LogSeparator($"Role {i + 1}/{orderedRoles.Count}: {role.RoleDisplayName}");
-            ApplyStatus = $"[{currentCategory!.Value.ToDisplayName()}] Applying to: {role.RoleDisplayName}...";
-
-            // Use the settings configured for this role's category
             var roleSettings = PhaseSettings.TryGetValue(role.Category, out var ps) ? ps : EditSettings;
-
-            try
-            {
-                var success = await _graphService.UpdatePolicyAsync(role, roleSettings);
-                if (success)
-                {
-                    ApplyCompleted++;
-                    result.Status = RoleApplyStatus.Success;
-                }
-                else
-                {
-                    ApplyFailed++;
-                    result.Status = RoleApplyStatus.Failed;
-                    result.ErrorMessage = "Update returned failure.";
-                    ApplyErrors.Add($"{role.RoleDisplayName}: Update returned failure.");
-                }
-            }
-            catch (Exception ex)
-            {
-                ApplyFailed++;
-                result.Status = RoleApplyStatus.Failed;
-                result.ErrorMessage = ex.Message;
-                ApplyErrors.Add($"{role.RoleDisplayName}: {ex.Message}");
-                _log.LogError(ex, $"Failed applying to: {role.RoleDisplayName}");
-            }
-
-            ApplyProgress = (double)(ApplyCompleted + ApplyFailed) / ApplyTotal * 100;
+            tasks.Add(ApplyToRoleAsync(role, result, roleSettings, throttler));
         }
+
+        await Task.WhenAll(tasks);
 
         IsBusy = false;
         IsApplyComplete = true;
@@ -858,6 +1014,45 @@ public partial class MainViewModel : ObservableObject
         _log.Log(LogLevel.SUCCESS, LogCategory.SETTINGS,
             $"Bulk apply complete. Success: {ApplyCompleted}, Failed: {ApplyFailed}");
         _log.LogSeparator("BULK APPLY END");
+    }
+
+    private async Task ApplyToRoleAsync(PimRolePolicy role, RoleApplyResult result, BulkEditSettings roleSettings, SemaphoreSlim throttler)
+    {
+        await throttler.WaitAsync();
+        try
+        {
+            _log.Log(LogLevel.INFO, LogCategory.SETTINGS,
+                $"[{role.Category.ToDisplayName()}] Applying to: {role.RoleDisplayName}...");
+
+            var success = await _graphService.UpdatePolicyAsync(role, roleSettings);
+            if (success)
+            {
+                ApplyCompleted++;
+                result.Status = RoleApplyStatus.Success;
+            }
+            else
+            {
+                ApplyFailed++;
+                result.Status = RoleApplyStatus.Failed;
+                result.ErrorMessage = "Update returned failure.";
+                ApplyErrors.Add($"{role.RoleDisplayName}: Update returned failure.");
+            }
+        }
+        catch (Exception ex)
+        {
+            ApplyFailed++;
+            result.Status = RoleApplyStatus.Failed;
+            result.ErrorMessage = ex.Message;
+            ApplyErrors.Add($"{role.RoleDisplayName}: {ex.Message}");
+            _log.LogError(ex, $"Failed applying to: {role.RoleDisplayName}");
+        }
+        finally
+        {
+            throttler.Release();
+            var done = ApplyCompleted + ApplyFailed;
+            ApplyProgress = (double)done / ApplyTotal * 100;
+            ApplyStatus = $"Applying changes... {done}/{ApplyTotal}";
+        }
     }
 
     #endregion
