@@ -11,21 +11,26 @@
     <UseWinUI>true</UseWinUI>
     <WinUISDKReferences>false</WinUISDKReferences>
     <EnableMsixTooling>true</EnableMsixTooling>
+    <WindowsPackageType>None</WindowsPackageType>
     <Nullable>enable</Nullable>
     <LangVersion>preview</LangVersion>
   </PropertyGroup>
   <ItemGroup>
-    <Content Include="Assets\AppLogo.png" />
-    <Content Include="Assets\lockup-horizontal.png" />
-    <Content Include="Assets\SplashScreen.scale-200.png" />
-    <Content Include="Assets\LockScreenLogo.scale-200.png" />
-    <Content Include="Assets\Square150x150Logo.scale-200.png" />
-    <Content Include="Assets\Square44x44Logo.scale-200.png" />
-    <Content Include="Assets\Square44x44Logo.targetsize-24_altform-unplated.png" />
-    <Content Include="Assets\StoreLogo.png" />
-    <Content Include="Assets\Wide310x150Logo.scale-200.png" />
-    <Content Include="Assets\portrait.png" />
-    <Content Include="Assets\mvp-logo.png" />
+    <!-- CopyToOutputDirectory is required so 'dotnet publish' places these
+         loose files next to the EXE — ms-appx:/// image URIs and the window
+         icon resolve from the application directory in unpackaged apps. -->
+    <Content Include="Assets\AppLogo.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\lockup-horizontal.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\SplashScreen.scale-200.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\LockScreenLogo.scale-200.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\Square150x150Logo.scale-200.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\Square44x44Logo.scale-200.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\Square44x44Logo.targetsize-24_altform-unplated.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\StoreLogo.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\Wide310x150Logo.scale-200.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\portrait.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\mvp-logo.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="favicon.ico" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
@@ -41,6 +46,12 @@
     <ProjectCapability Include="Msix" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="..\docs\favicon-32.png">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.1839" />
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.2.0" />
     <PackageReference Include="Microsoft.Identity.Client" Version="4.67.2" />
@@ -49,6 +60,9 @@
   </ItemGroup>
   <ItemGroup>
     <None Update="Views\AboutPage.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </None>
+    <None Update="Views\FeedbackPage.xaml">
       <Generator>MSBuild:Compile</Generator>
     </None>
   </ItemGroup>
@@ -60,6 +74,9 @@
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Update="Views\AboutPage.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Update="Views\FeedbackPage.xaml">
       <Generator>MSBuild:Compile</Generator>
     </Page>
   </ItemGroup>
@@ -75,9 +92,27 @@
 
   <!-- Publish Properties -->
   <PropertyGroup>
-    <PublishReadyToRun Condition="'$(Configuration)' == 'Debug'">False</PublishReadyToRun>
-    <PublishReadyToRun Condition="'$(Configuration)' != 'Debug'">True</PublishReadyToRun>
-    <PublishTrimmed Condition="'$(Configuration)' == 'Debug'">False</PublishTrimmed>
-    <PublishTrimmed Condition="'$(Configuration)' != 'Debug'">True</PublishTrimmed>
+    <BaseOutputPath>C:\VisualStudio\builds\PIMSettings-manager</BaseOutputPath>
+    <ApplicationIcon>favicon.ico</ApplicationIcon>
+    <AssemblyName>PIMSettings Manager</AssemblyName>
+    <AssemblyTitle>PIMSettings Manager</AssemblyTitle>
+    <PackageIcon>favicon-32.png</PackageIcon>
+  </PropertyGroup>
+
+  <!-- Product metadata — embedded into the EXE version resource so
+       Advanced Installer picks up name, version, description, and company
+       automatically when importing the build output. -->
+  <PropertyGroup>
+    <Version>1.0.0</Version>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+    <Product>PIMSettings Manager</Product>
+    <Company>Appelcloud</Company>
+    <Authors>Appelcloud</Authors>
+    <Description>Bulk-manage Microsoft Entra PIM role settings for Entra ID roles and PIM for Groups.</Description>
+    <Copyright>© $([System.DateTime]::Now.Year) Appelcloud</Copyright>
+    <NeutralLanguage>en-US</NeutralLanguage>
+    <!-- Keep ProductVersion clean (no git commit hash suffix) for installers -->
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
 </Project>

@@ -23,7 +23,7 @@ public partial class BulkEditSettings : ObservableObject
 
     // "Require approval to activate" — consolidated with approver search
     [ObservableProperty] public partial bool RequireApprovalToActivate { get; set; }
-    [ObservableProperty] public partial string ApproversRaw { get; set; } // semicolon-separated user IDs
+    [ObservableProperty] public partial string ApproversRaw { get; set; } // semicolon-separated "user:{id}"/"group:{id}" entries
 
     // Assignment
     [ObservableProperty] public partial bool AllowPermanentEligibleAssignment { get; set; }

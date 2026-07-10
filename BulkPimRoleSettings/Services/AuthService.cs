@@ -93,17 +93,28 @@ public sealed class AuthService
 
     public async Task<string?> GetValidTokenAsync()
     {
-        if (_authResult == null) return null;
+        // Work on a local snapshot so a concurrent logout can't null-ref us
+        // while parallel Graph requests are in flight.
+        var current = _authResult;
+        if (current == null) return null;
 
         // Refresh if about to expire
-        if (_authResult.ExpiresOn <= DateTimeOffset.UtcNow.AddMinutes(5))
+        if (current.ExpiresOn <= DateTimeOffset.UtcNow.AddMinutes(5))
         {
             try
             {
                 var accounts = await _msalClient.GetAccountsAsync();
-                _authResult = await _msalClient
-                    .AcquireTokenSilent(Scopes, accounts.FirstOrDefault())
+                var account = accounts.FirstOrDefault();
+                if (account == null)
+                {
+                    _log.Log(LogLevel.WARN, LogCategory.AUTH, "No cached account available for token refresh.");
+                    return null;
+                }
+
+                current = await _msalClient
+                    .AcquireTokenSilent(Scopes, account)
                     .ExecuteAsync();
+                _authResult = current;
             }
             catch (Exception ex)
             {
@@ -112,7 +123,7 @@ public sealed class AuthService
             }
         }
 
-        return _authResult.AccessToken;
+        return current.AccessToken;
     }
 
     public async Task LogoutAsync()
