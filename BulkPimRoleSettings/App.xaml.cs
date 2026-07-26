@@ -41,7 +41,7 @@ namespace BulkPimRoleSettings
 
         private void OnUnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs e)
         {
-            // Log the exception and keep the app running.
+            // Log the exception; avoid rethrowing from the handler.
             try
             {
                 LogService.Instance.LogError(e.Exception, "Unhandled exception was suppressed.");
@@ -50,6 +50,17 @@ namespace BulkPimRoleSettings
             {
             }
 
+#if DEBUG
+            // During development, do not suppress unhandled exceptions so the
+            // debugger can break.
+            if (System.Diagnostics.Debugger.IsAttached)
+            {
+                e.Handled = false;
+                return;
+            }
+#endif
+
+            // In production, keep the app running.
             e.Handled = true;
         }
 
