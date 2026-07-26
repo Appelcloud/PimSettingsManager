@@ -1,7 +1,9 @@
 using System;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Identity.Client;
+using Microsoft.Identity.Client.Broker;
 
 namespace BulkPimRoleSettings.Services;
 
@@ -33,14 +35,15 @@ public sealed class AuthService
 
     public AuthService()
     {
+        // Sign in through the Windows Web Account Manager (WAM) broker.
         _msalClient = PublicClientApplicationBuilder
             .Create(ClientId)
             .WithAuthority(Authority)
-            .WithDefaultRedirectUri()
+            .WithBroker(new BrokerOptions(BrokerOptions.OperatingSystems.Windows))
             .Build();
     }
 
-    public async Task<bool> LoginAsync(IntPtr windowHandle)
+    public async Task<bool> LoginAsync(IntPtr windowHandle, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -56,7 +59,7 @@ public sealed class AuthService
                 {
                     _authResult = await _msalClient
                         .AcquireTokenSilent(Scopes, account)
-                        .ExecuteAsync();
+                        .ExecuteAsync(cancellationToken);
 
                     _log.Log(LogLevel.SUCCESS, LogCategory.AUTH,
                         $"Silent token acquired for: {_authResult.Account.Username}");
@@ -68,24 +71,44 @@ public sealed class AuthService
                 }
             }
 
-            // Interactive login
+            // Cancel the interactive sign-in after 5 minutes or on user request.
+            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken, timeoutCts.Token);
+
             _authResult = await _msalClient
                 .AcquireTokenInteractive(Scopes)
                 .WithParentActivityOrWindow(windowHandle)
-                .ExecuteAsync();
+                .ExecuteAsync(linkedCts.Token);
 
             _log.Log(LogLevel.SUCCESS, LogCategory.AUTH,
                 $"User signed in: {_authResult.Account.Username} | Tenant: {_authResult.TenantId}");
 
             return true;
         }
+        catch (MsalClientException ex) when (ex.ErrorCode == MsalError.AuthenticationCanceledError)
+        {
+            // Sign-in cancelled by the user.
+            _authResult = null;
+            _log.Log(LogLevel.INFO, LogCategory.AUTH, "Login was cancelled by the user.");
+            return false;
+        }
+        catch (OperationCanceledException)
+        {
+            // Sign-in cancelled or timed out.
+            _authResult = null;
+            _log.Log(LogLevel.INFO, LogCategory.AUTH, "Login was cancelled or timed out.");
+            return false;
+        }
         catch (MsalException ex)
         {
+            _authResult = null;
             _log.LogError(ex, "MSAL authentication failed.");
             return false;
         }
         catch (Exception ex)
         {
+            _authResult = null;
             _log.LogError(ex, "Unexpected authentication error.");
             return false;
         }

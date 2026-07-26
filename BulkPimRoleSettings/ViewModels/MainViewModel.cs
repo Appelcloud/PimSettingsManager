@@ -147,16 +147,32 @@ public partial class MainViewModel : ObservableObject
 
     #region Login
 
+    // True while an interactive sign-in is in progress.
+    [ObservableProperty] public partial bool IsSigningIn { get; set; }
+
+    private CancellationTokenSource? _loginCts;
+
     [RelayCommand]
     private async Task LoginAsync()
     {
+        // Ignore repeated clicks while a sign-in is already running.
+        if (IsSigningIn) return;
+
+        _loginCts?.Dispose();
+        _loginCts = new CancellationTokenSource();
+
         IsBusy = true;
+        IsSigningIn = true;
         ErrorMessage = string.Empty;
         StatusMessage = "Signing in...";
 
         try
         {
-            var success = await _authService.LoginAsync(WindowHandle);
+            var success = await _authService.LoginAsync(WindowHandle, _loginCts.Token);
+
+            // Sign-in is finished; only the local permission check remains.
+            IsSigningIn = false;
+
             if (success)
             {
                 LoggedInUser = _authService.UserDisplayName ?? "Unknown";
@@ -179,7 +195,8 @@ public partial class MainViewModel : ObservableObject
             }
             else
             {
-                ErrorMessage = "Login failed. Please try again.";
+                StatusMessage = string.Empty;
+                ErrorMessage = "Sign-in was cancelled or did not complete. Please try again.";
             }
         }
         catch (Exception ex)
@@ -189,8 +206,22 @@ public partial class MainViewModel : ObservableObject
         }
         finally
         {
+            IsSigningIn = false;
             IsBusy = false;
+            _loginCts?.Dispose();
+            _loginCts = null;
         }
+    }
+
+    [RelayCommand]
+    private void CancelLogin()
+    {
+        // Only cancel while a sign-in is in progress.
+        if (!IsSigningIn) return;
+
+        _log.Log(LogLevel.INFO, LogCategory.AUTH, "User cancelled the sign-in process.");
+        _loginCts?.Cancel();
+        StatusMessage = "Cancelling sign-in...";
     }
 
     #endregion

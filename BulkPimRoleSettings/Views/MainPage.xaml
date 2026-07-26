@@ -53,10 +53,11 @@
                 <Button Visibility="{x:Bind ViewModel.IsAuthenticated, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
                         Background="Transparent" BorderThickness="0" Padding="6,4">
                     <Button.Flyout>
-                        <Flyout>
+                        <Flyout x:Name="ProfileFlyout">
                             <StackPanel Spacing="12" MinWidth="200">
                                 <TextBlock Text="{x:Bind ViewModel.LoggedInUser, Mode=OneWay}" FontWeight="SemiBold"/>
                                 <Button Content="Sign out" Command="{x:Bind ViewModel.LogoutCommand}"
+                                        Click="SignOutButton_Click"
                                         HorizontalAlignment="Stretch"/>
                             </StackPanel>
                         </Flyout>
@@ -78,8 +79,13 @@
                     <Image Source="ms-appx:///Assets/lockup-horizontal.png" Height="160" HorizontalAlignment="Center"/>
 
                     <StackPanel Spacing="12" HorizontalAlignment="Center">
-                        <Button Content="Sign In" HorizontalAlignment="Center" Style="{StaticResource AccentButtonStyle}"
-                                Command="{x:Bind ViewModel.LoginCommand}" IsEnabled="{x:Bind ViewModel.IsBusy, Mode=OneWay, Converter={StaticResource InverseBoolConverter}}"/>
+                        <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Center">
+                            <Button Content="Cancel"
+                                    Command="{x:Bind ViewModel.CancelLoginCommand}"
+                                    Visibility="{x:Bind ViewModel.IsSigningIn, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                            <Button Content="Sign In" Style="{StaticResource AccentButtonStyle}"
+                                    Command="{x:Bind ViewModel.LoginCommand}" IsEnabled="{x:Bind ViewModel.IsBusy, Mode=OneWay, Converter={StaticResource InverseBoolConverter}}"/>
+                        </StackPanel>
                         <ProgressRing IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" HorizontalAlignment="Center"/>
                         <TextBlock Text="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}"
                                    Foreground="IndianRed" TextWrapping="Wrap" TextAlignment="Center"/>
