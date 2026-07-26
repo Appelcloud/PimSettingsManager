@@ -6,6 +6,7 @@ using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Navigation;
 using Microsoft.UI.Xaml.Shapes;
+using BulkPimRoleSettings.Services;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -35,6 +36,23 @@ namespace BulkPimRoleSettings
         public App()
         {
             InitializeComponent();
+            UnhandledException += OnUnhandledException;
+        }
+
+        private void OnUnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs e)
+        {
+            // Prevent the app from crashing on background/interop exceptions
+            // (e.g. the user closing the interactive sign-in window).
+            try
+            {
+                LogService.Instance.LogError(e.Exception, "Unhandled exception was suppressed.");
+            }
+            catch
+            {
+                // Never let logging failures take the app down.
+            }
+
+            e.Handled = true;
         }
 
         /// <summary>

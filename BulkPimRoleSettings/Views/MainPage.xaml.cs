@@ -39,6 +39,12 @@ public sealed partial class MainPage : Page
         Frame.Navigate(typeof(FeedbackPage));
     }
 
+    private void SignOutButton_Click(object sender, RoutedEventArgs e)
+    {
+        // Close the profile flyout when the user signs out.
+        ProfileFlyout.Hide();
+    }
+
     private async void ApproverSearch_TextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
     {
         if (args.Reason == AutoSuggestionBoxTextChangeReason.UserInput)

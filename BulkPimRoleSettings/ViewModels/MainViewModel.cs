@@ -147,16 +147,34 @@ public partial class MainViewModel : ObservableObject
 
     #region Login
 
+    // Indicates an interactive sign-in is in progress (used to show a Cancel button).
+    [ObservableProperty] public partial bool IsSigningIn { get; set; }
+
+    private CancellationTokenSource? _loginCts;
+
     [RelayCommand]
     private async Task LoginAsync()
     {
+        // Guard against double-clicks starting a second interactive flow.
+        if (IsSigningIn) return;
+
+        _loginCts?.Dispose();
+        _loginCts = new CancellationTokenSource();
+
         IsBusy = true;
+        IsSigningIn = true;
         ErrorMessage = string.Empty;
         StatusMessage = "Signing in...";
 
         try
         {
-            var success = await _authService.LoginAsync(WindowHandle);
+            var success = await _authService.LoginAsync(WindowHandle, _loginCts.Token);
+
+            // The interactive sign-in is finished at this point (success or not).
+            // Hide the Cancel button — there is nothing left to cancel; the rest is
+            // just a local permission check.
+            IsSigningIn = false;
+
             if (success)
             {
                 LoggedInUser = _authService.UserDisplayName ?? "Unknown";
@@ -179,7 +197,9 @@ public partial class MainViewModel : ObservableObject
             }
             else
             {
-                ErrorMessage = "Login failed. Please try again.";
+                // Covers user cancellation, closing the browser (Cancel button), or timeout.
+                StatusMessage = string.Empty;
+                ErrorMessage = "Sign-in was cancelled or did not complete. Please try again.";
             }
         }
         catch (Exception ex)
@@ -189,8 +209,24 @@ public partial class MainViewModel : ObservableObject
         }
         finally
         {
+            IsSigningIn = false;
             IsBusy = false;
+            _loginCts?.Dispose();
+            _loginCts = null;
         }
+    }
+
+    [RelayCommand]
+    private void CancelLogin()
+    {
+        // Only meaningful while the interactive sign-in is actually in progress.
+        // Once the token has been acquired, sign-in is complete and cannot be undone
+        // here (use Sign out instead).
+        if (!IsSigningIn) return;
+
+        _log.Log(LogLevel.INFO, LogCategory.AUTH, "User cancelled the sign-in process.");
+        _loginCts?.Cancel();
+        StatusMessage = "Cancelling sign-in...";
     }
 
     #endregion

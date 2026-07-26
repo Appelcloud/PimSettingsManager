@@ -1,7 +1,9 @@
 using System;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Identity.Client;
+using Microsoft.Identity.Client.Broker;
 
 namespace BulkPimRoleSettings.Services;
 
@@ -33,14 +35,20 @@ public sealed class AuthService
 
     public AuthService()
     {
+        // Use the Windows Web Account Manager (WAM) broker. This is the most secure
+        // sign-in option Microsoft recommends for desktop apps: it uses the native
+        // Windows account picker, keeps tokens protected by the OS, and never opens
+        // a browser tab or a localhost loopback listener. That means cancelling the
+        // sign-in can no longer leave a browser trying to reach a closed localhost
+        // endpoint (the ERR_CONNECTION_REFUSED problem).
         _msalClient = PublicClientApplicationBuilder
             .Create(ClientId)
             .WithAuthority(Authority)
-            .WithDefaultRedirectUri()
+            .WithBroker(new BrokerOptions(BrokerOptions.OperatingSystems.Windows))
             .Build();
     }
 
-    public async Task<bool> LoginAsync(IntPtr windowHandle)
+    public async Task<bool> LoginAsync(IntPtr windowHandle, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -56,7 +64,7 @@ public sealed class AuthService
                 {
                     _authResult = await _msalClient
                         .AcquireTokenSilent(Scopes, account)
-                        .ExecuteAsync();
+                        .ExecuteAsync(cancellationToken);
 
                     _log.Log(LogLevel.SUCCESS, LogCategory.AUTH,
                         $"Silent token acquired for: {_authResult.Account.Username}");
@@ -68,24 +76,49 @@ public sealed class AuthService
                 }
             }
 
-            // Interactive login
+            // Interactive login using the WAM broker (native Windows account picker).
+            // No browser tab and no localhost loopback are involved, so cancelling the
+            // sign-in can never leave a browser pointing at a dead localhost endpoint.
+            // The flow is cancellable (Cancel button) and bounded by a timeout so it
+            // can never hang.
+            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken, timeoutCts.Token);
+
             _authResult = await _msalClient
                 .AcquireTokenInteractive(Scopes)
                 .WithParentActivityOrWindow(windowHandle)
-                .ExecuteAsync();
+                .ExecuteAsync(linkedCts.Token);
 
             _log.Log(LogLevel.SUCCESS, LogCategory.AUTH,
                 $"User signed in: {_authResult.Account.Username} | Tenant: {_authResult.TenantId}");
 
             return true;
         }
+        catch (MsalClientException ex) when (ex.ErrorCode == MsalError.AuthenticationCanceledError)
+        {
+            // User closed the sign-in window / cancelled the flow. Not an error:
+            // reset state so the user can click login again.
+            _authResult = null;
+            _log.Log(LogLevel.INFO, LogCategory.AUTH, "Login was cancelled by the user.");
+            return false;
+        }
+        catch (OperationCanceledException)
+        {
+            // Flow was cancelled by the user (Cancel button) or timed out.
+            _authResult = null;
+            _log.Log(LogLevel.INFO, LogCategory.AUTH, "Login was cancelled or timed out.");
+            return false;
+        }
         catch (MsalException ex)
         {
+            _authResult = null;
             _log.LogError(ex, "MSAL authentication failed.");
             return false;
         }
         catch (Exception ex)
         {
+            _authResult = null;
             _log.LogError(ex, "Unexpected authentication error.");
             return false;
         }
