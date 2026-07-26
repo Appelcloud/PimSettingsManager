@@ -35,12 +35,7 @@ public sealed class AuthService
 
     public AuthService()
     {
-        // Use the Windows Web Account Manager (WAM) broker. This is the most secure
-        // sign-in option Microsoft recommends for desktop apps: it uses the native
-        // Windows account picker, keeps tokens protected by the OS, and never opens
-        // a browser tab or a localhost loopback listener. That means cancelling the
-        // sign-in can no longer leave a browser trying to reach a closed localhost
-        // endpoint (the ERR_CONNECTION_REFUSED problem).
+        // Sign in through the Windows Web Account Manager (WAM) broker.
         _msalClient = PublicClientApplicationBuilder
             .Create(ClientId)
             .WithAuthority(Authority)
@@ -76,11 +71,7 @@ public sealed class AuthService
                 }
             }
 
-            // Interactive login using the WAM broker (native Windows account picker).
-            // No browser tab and no localhost loopback are involved, so cancelling the
-            // sign-in can never leave a browser pointing at a dead localhost endpoint.
-            // The flow is cancellable (Cancel button) and bounded by a timeout so it
-            // can never hang.
+            // Cancel the interactive sign-in after 5 minutes or on user request.
             using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
                 cancellationToken, timeoutCts.Token);
@@ -97,15 +88,14 @@ public sealed class AuthService
         }
         catch (MsalClientException ex) when (ex.ErrorCode == MsalError.AuthenticationCanceledError)
         {
-            // User closed the sign-in window / cancelled the flow. Not an error:
-            // reset state so the user can click login again.
+            // Sign-in cancelled by the user.
             _authResult = null;
             _log.Log(LogLevel.INFO, LogCategory.AUTH, "Login was cancelled by the user.");
             return false;
         }
         catch (OperationCanceledException)
         {
-            // Flow was cancelled by the user (Cancel button) or timed out.
+            // Sign-in cancelled or timed out.
             _authResult = null;
             _log.Log(LogLevel.INFO, LogCategory.AUTH, "Login was cancelled or timed out.");
             return false;

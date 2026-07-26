@@ -41,7 +41,7 @@ public sealed partial class MainPage : Page
 
     private void SignOutButton_Click(object sender, RoutedEventArgs e)
     {
-        // Close the profile flyout when the user signs out.
+        // Close the profile flyout.
         ProfileFlyout.Hide();
     }
 

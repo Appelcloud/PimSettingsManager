@@ -41,15 +41,13 @@ namespace BulkPimRoleSettings
 
         private void OnUnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs e)
         {
-            // Prevent the app from crashing on background/interop exceptions
-            // (e.g. the user closing the interactive sign-in window).
+            // Log the exception and keep the app running.
             try
             {
                 LogService.Instance.LogError(e.Exception, "Unhandled exception was suppressed.");
             }
             catch
             {
-                // Never let logging failures take the app down.
             }
 
             e.Handled = true;

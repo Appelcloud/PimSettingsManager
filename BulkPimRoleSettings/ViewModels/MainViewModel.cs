@@ -147,7 +147,7 @@ public partial class MainViewModel : ObservableObject
 
     #region Login
 
-    // Indicates an interactive sign-in is in progress (used to show a Cancel button).
+    // True while an interactive sign-in is in progress.
     [ObservableProperty] public partial bool IsSigningIn { get; set; }
 
     private CancellationTokenSource? _loginCts;
@@ -155,7 +155,7 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private async Task LoginAsync()
     {
-        // Guard against double-clicks starting a second interactive flow.
+        // Ignore repeated clicks while a sign-in is already running.
         if (IsSigningIn) return;
 
         _loginCts?.Dispose();
@@ -170,9 +170,7 @@ public partial class MainViewModel : ObservableObject
         {
             var success = await _authService.LoginAsync(WindowHandle, _loginCts.Token);
 
-            // The interactive sign-in is finished at this point (success or not).
-            // Hide the Cancel button — there is nothing left to cancel; the rest is
-            // just a local permission check.
+            // Sign-in is finished; only the local permission check remains.
             IsSigningIn = false;
 
             if (success)
@@ -197,7 +195,6 @@ public partial class MainViewModel : ObservableObject
             }
             else
             {
-                // Covers user cancellation, closing the browser (Cancel button), or timeout.
                 StatusMessage = string.Empty;
                 ErrorMessage = "Sign-in was cancelled or did not complete. Please try again.";
             }
@@ -219,9 +216,7 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void CancelLogin()
     {
-        // Only meaningful while the interactive sign-in is actually in progress.
-        // Once the token has been acquired, sign-in is complete and cannot be undone
-        // here (use Sign out instead).
+        // Only cancel while a sign-in is in progress.
         if (!IsSigningIn) return;
 
         _log.Log(LogLevel.INFO, LogCategory.AUTH, "User cancelled the sign-in process.");
