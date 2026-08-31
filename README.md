@@ -30,28 +30,42 @@ A Windows desktop tool for configuring PIM (Privileged Identity Management) role
 
 - Windows 10 (build 17763+) or Windows 11
 - .NET 8 Desktop Runtime
+- Windows App SDK runtime
 - Entra ID account with `RoleManagement.ReadWrite.Directory` permissions
 - Microsoft Entra ID P2 license (for PIM)
 
 ## Getting Started
 
-The repository ships a ready-to-run, self-contained build of the app in the root
-[`tool/`](tool/) folder — no installation and no .NET runtime required.
+The repository ships a ready-to-run build of the app in the root
+[`tool/`](tool/) folder. It is framework-dependent, so it needs the
+**.NET 8 Desktop Runtime** installed (a small, free, one-time install from Microsoft).
 
 1. Clone or download this repository
 2. Run `tool\PIMSettings Manager.exe`
+   - If Windows reports that the .NET runtime is missing, install it using the
+     steps below, then run the app again.
 3. Sign in with your Entra ID credentials
 4. Select the PIM categories you want to manage (Entra ID Roles, PIM for Groups, or both)
 5. Select roles, configure settings per category, preview all changes, and apply!
+
+### Installing the .NET 8 Desktop Runtime
+
+- **Download:** [.NET 8 Desktop Runtime (x64)](https://dotnet.microsoft.com/download/dotnet/8.0/runtime?cid=getdotnetcore&runtime=desktop&arch=x64) — pick the **Desktop Runtime**, x64.
+- **Or via winget** (Windows Package Manager):
+
+  ```powershell
+  winget install Microsoft.DotNet.DesktopRuntime.8
+  ```
+
+After installing, run `tool\PIMSettings Manager.exe`.
 
 ## Repository Layout
 
 | Path | Description |
 |---|---|
-| `tool/` | Committed self-contained (win-x64) build of the GUI — run `tool\PIMSettings Manager.exe` |
+| `tool/` | Committed framework-dependent (win-x64) build of the GUI — run `tool\PIMSettings Manager.exe` |
 | `src/` | Application source: solution and the `BulkPimRoleSettings` WinUI 3 project |
 | `docs/` | Documentation site assets and screenshots |
-| `publish-tool.ps1` | Rebuilds the `tool/` folder from source |
 
 ## Build from Source
 
@@ -59,44 +73,12 @@ The repository ships a ready-to-run, self-contained build of the app in the root
 # Open the solution
 start src\BulkPimRoleSettings.slnx
 
-# ...or rebuild the committed root tool from the command line
-pwsh -File .\publish-tool.ps1
+# ...or publish the tool from the command line
+dotnet publish src\BulkPimRoleSettings\BulkPimRoleSettings.csproj -c Release -p:PublishProfile=win-x64
 ```
 
-The published output is written to `tool/`. Use `-Runtime win-arm64` or `-Runtime win-x86`
-with `publish-tool.ps1` to target other architectures.
-
-## Code signing
-
-The root tool can be code-signed with **Azure Artifact Signing** (formerly Trusted Signing)
-using [`sign-tool.ps1`](sign-tool.ps1). Signing runs locally against your existing signing
-account and certificate profile.
-
-**Prerequisites (install once):**
-
-```powershell
-winget install -e --id Microsoft.Azure.ArtifactSigningClientTools   # signtool dlib plugin
-winget install -e --id Microsoft.WindowsSDK                         # signtool.exe
-# Azure CLI is also required for authentication
-```
-
-The signing identity must hold the **Trusted Signing Certificate Profile Signer** role on the
-certificate profile, and the account's identity validation must be **Completed**.
-
-**Sign the tool:**
-
-```powershell
-az login
-pwsh -File .\sign-tool.ps1 `
-    -Endpoint https://<region>.codesigning.azure.net/ `
-    -AccountName <your-signing-account-name> `
-    -CertificateProfileName <your-certificate-profile-name>
-```
-
-`-Endpoint` is the **Account URI** shown in the Azure portal (the region must match where the
-account and certificate profile were created). `-AccountName` is the signing **account name**
-— not your user, email, or app id. The script signs `tool\PIMSettings Manager.exe` with a
-trusted timestamp and verifies the result.
+The published output can be copied into `tool/`. Use the `win-arm64` or `win-x86`
+publish profiles to target other architectures.
 
 ## Permissions Required
 
