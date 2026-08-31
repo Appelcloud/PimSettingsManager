@@ -66,6 +66,38 @@ pwsh -File .\publish-tool.ps1
 The published output is written to `tool/`. Use `-Runtime win-arm64` or `-Runtime win-x86`
 with `publish-tool.ps1` to target other architectures.
 
+## Code signing
+
+The root tool can be code-signed with **Azure Artifact Signing** (formerly Trusted Signing)
+using [`sign-tool.ps1`](sign-tool.ps1). Signing runs locally against your existing signing
+account and certificate profile.
+
+**Prerequisites (install once):**
+
+```powershell
+winget install -e --id Microsoft.Azure.ArtifactSigningClientTools   # signtool dlib plugin
+winget install -e --id Microsoft.WindowsSDK                         # signtool.exe
+# Azure CLI is also required for authentication
+```
+
+The signing identity must hold the **Trusted Signing Certificate Profile Signer** role on the
+certificate profile, and the account's identity validation must be **Completed**.
+
+**Sign the tool:**
+
+```powershell
+az login
+pwsh -File .\sign-tool.ps1 `
+    -Endpoint https://<region>.codesigning.azure.net/ `
+    -AccountName <your-signing-account-name> `
+    -CertificateProfileName <your-certificate-profile-name>
+```
+
+`-Endpoint` is the **Account URI** shown in the Azure portal (the region must match where the
+account and certificate profile were created). `-AccountName` is the signing **account name**
+— not your user, email, or app id. The script signs `tool\PIMSettings Manager.exe` with a
+trusted timestamp and verifies the result.
+
 ## Permissions Required
 
 The application uses delegated permissions via MSAL (Microsoft Authentication Library):
