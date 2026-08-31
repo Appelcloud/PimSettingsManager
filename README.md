@@ -35,11 +35,36 @@ A Windows desktop tool for configuring PIM (Privileged Identity Management) role
 
 ## Getting Started
 
-1. Download the latest release from [Releases](https://github.com/Appelcloud/BulkPimRoleSettings/releases)
-2. Run the application
+The repository ships a ready-to-run, self-contained build of the app in the root
+[`tool/`](tool/) folder — no installation and no .NET runtime required.
+
+1. Clone or download this repository
+2. Run `tool\PIMSettings Manager.exe`
 3. Sign in with your Entra ID credentials
 4. Select the PIM categories you want to manage (Entra ID Roles, PIM for Groups, or both)
 5. Select roles, configure settings per category, preview all changes, and apply!
+
+## Repository Layout
+
+| Path | Description |
+|---|---|
+| `tool/` | Committed self-contained (win-x64) build of the GUI — run `tool\PIMSettings Manager.exe` |
+| `src/` | Application source: solution and the `BulkPimRoleSettings` WinUI 3 project |
+| `docs/` | Documentation site assets and screenshots |
+| `publish-tool.ps1` | Rebuilds the `tool/` folder from source |
+
+## Build from Source
+
+```powershell
+# Open the solution
+start src\BulkPimRoleSettings.slnx
+
+# ...or rebuild the committed root tool from the command line
+pwsh -File .\publish-tool.ps1
+```
+
+The published output is written to `tool/`. Use `-Runtime win-arm64` or `-Runtime win-x86`
+with `publish-tool.ps1` to target other architectures.
 
 ## Permissions Required
 

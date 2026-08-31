@@ -56,3 +56,7 @@ Thumbs.db
 *.tmp
 *.temp
 .DS_Store
+
+## Committed self-contained tool build (published GUI kept at repo root)
+!tool/
+!tool/**
