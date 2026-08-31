@@ -30,16 +30,55 @@ A Windows desktop tool for configuring PIM (Privileged Identity Management) role
 
 - Windows 10 (build 17763+) or Windows 11
 - .NET 8 Desktop Runtime
+- Windows App SDK runtime
 - Entra ID account with `RoleManagement.ReadWrite.Directory` permissions
 - Microsoft Entra ID P2 license (for PIM)
 
 ## Getting Started
 
-1. Download the latest release from [Releases](https://github.com/Appelcloud/BulkPimRoleSettings/releases)
-2. Run the application
+The repository ships a ready-to-run build of the app in the root
+[`tool/`](tool/) folder. It is framework-dependent, so it needs the
+**.NET 8 Desktop Runtime** installed (a small, free, one-time install from Microsoft).
+
+1. Clone or download this repository
+2. Run `tool\PIMSettings Manager.exe`
+   - If Windows reports that the .NET runtime is missing, install it using the
+     steps below, then run the app again.
 3. Sign in with your Entra ID credentials
 4. Select the PIM categories you want to manage (Entra ID Roles, PIM for Groups, or both)
 5. Select roles, configure settings per category, preview all changes, and apply!
+
+### Installing the .NET 8 Desktop Runtime
+
+- **Download:** [.NET 8 Desktop Runtime (x64)](https://dotnet.microsoft.com/download/dotnet/8.0/runtime?cid=getdotnetcore&runtime=desktop&arch=x64) — pick the **Desktop Runtime**, x64.
+- **Or via winget** (Windows Package Manager):
+
+  ```powershell
+  winget install Microsoft.DotNet.DesktopRuntime.8
+  ```
+
+After installing, run `tool\PIMSettings Manager.exe`.
+
+## Repository Layout
+
+| Path | Description |
+|---|---|
+| `tool/` | Committed framework-dependent (win-x64) build of the GUI — run `tool\PIMSettings Manager.exe` |
+| `src/` | Application source: solution and the `BulkPimRoleSettings` WinUI 3 project |
+| `docs/` | Documentation site assets and screenshots |
+
+## Build from Source
+
+```powershell
+# Open the solution
+start src\BulkPimRoleSettings.slnx
+
+# ...or publish the tool from the command line
+dotnet publish src\BulkPimRoleSettings\BulkPimRoleSettings.csproj -c Release -p:PublishProfile=win-x64
+```
+
+The published output can be copied into `tool/`. Use the `win-arm64` or `win-x86`
+publish profiles to target other architectures.
 
 ## Permissions Required
 
