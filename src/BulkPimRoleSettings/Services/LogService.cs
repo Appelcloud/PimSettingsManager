@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.IO;
 using System.Reflection;
 using System.Runtime.CompilerServices;
@@ -26,6 +27,7 @@ public enum LogCategory
 
 public sealed class LogService
 {
+    private static readonly string TimestampFormat = GetOsTimestampFormat();
     private static readonly Lazy<LogService> _instance = new(() => new LogService());
     public static LogService Instance => _instance.Value;
 
@@ -50,7 +52,7 @@ public sealed class LogService
         Directory.CreateDirectory(logDir);
         CleanupOldLogs(logDir);
 
-        var timestamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
+        var timestamp = SanitizeForFileName(DateTime.Now.ToString(TimestampFormat));
         _logFilePath = Path.Combine(logDir, $"PIMSettingsManager_{timestamp}.log");
 
         WriteSessionHeader();
@@ -60,7 +62,7 @@ public sealed class LogService
     {
         var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "unknown";
         WriteRaw("═══════════════ PIMSettings Manager — Session Log ═══════════════");
-        WriteRaw($"Started:  {DateTime.Now:yyyy-MM-dd HH:mm:ss} (local time)");
+        WriteRaw($"Started:  {DateTime.Now.ToString(TimestampFormat)} (local time)");
         WriteRaw($"Version:  {version}");
         WriteRaw("──────────────────────────────────────────────────────────────────");
     }
@@ -86,7 +88,7 @@ public sealed class LogService
 
     private static string GetOsTimestampFormat()
     {
-        var dtf = System.Globalization.CultureInfo.CurrentCulture.DateTimeFormat;
+        var dtf = CultureInfo.CurrentCulture.DateTimeFormat;
         return $"{dtf.ShortDatePattern} {dtf.LongTimePattern}";
     }
 
@@ -132,7 +134,7 @@ public sealed class LogService
     {
         if (level < MinimumLevel) return;
 
-        var timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+        var timestamp = DateTime.Now.ToString(TimestampFormat);
         WriteRaw($"[{timestamp}] [{level,-7}] {message}");
     }
 
