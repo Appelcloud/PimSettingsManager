@@ -67,6 +67,14 @@ public sealed class GraphPimService
         }
     }
 
+    /// <summary>
+    /// Executes a Graph API request and returns the parsed JSON response.
+    /// </summary>
+    /// <param name="method">The HTTP method to use for the request.</param>
+    /// <param name="url">The URL of the Graph API endpoint.</param>
+    /// <param name="jsonBody">The JSON body to include in the request, if any.</param>
+    /// <returns>The parsed JSON response, or null if the response body is empty.</returns>
+    /// <exception cref="HttpRequestException"></exception>
     private async Task<JsonNode?> ExecuteAsync(HttpMethod method, string url, string? jsonBody = null)
     {
         _log.LogApiCall(method.Method, url, jsonBody);
@@ -87,6 +95,11 @@ public sealed class GraphPimService
         return string.IsNullOrWhiteSpace(body) ? null : JsonNode.Parse(body);
     }
 
+    /// <summary>
+    /// Attempts to extract a user-friendly error message from a Microsoft Graph API response body.
+    /// </summary>
+    /// <param name="body">The response body from the Graph API.</param>
+    /// <returns>A user-friendly error message, or null if none could be extracted.</returns>
     private static string? TryGetGraphErrorMessage(string body)
     {
         if (string.IsNullOrWhiteSpace(body)) return null;

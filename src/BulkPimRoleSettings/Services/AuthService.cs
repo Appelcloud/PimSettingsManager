@@ -9,6 +9,7 @@ namespace BulkPimRoleSettings.Services;
 
 public sealed class AuthService
 {
+    // Scopes required for the application to function. These scopes are used to request access tokens from Microsoft Identity Platform.
     private static readonly string[] Scopes = new[]
     {
         "RoleManagementPolicy.ReadWrite.Directory",
@@ -24,6 +25,7 @@ public sealed class AuthService
     private const string ClientId = "14d82eec-204b-4c2f-b7e8-296a70dab67e";
     private const string Authority = "https://login.microsoftonline.com/common";
 
+    // MSAL client for handling authentication and token acquisition
     private readonly IPublicClientApplication _msalClient;
     private readonly LogService _log = LogService.Instance;
     private AuthenticationResult? _authResult;
@@ -151,6 +153,7 @@ public sealed class AuthService
 
     public async Task LogoutAsync()
     {
+        // Clear the cached accounts and reset the authentication result.
         var accounts = await _msalClient.GetAccountsAsync();
         foreach (var account in accounts)
         {

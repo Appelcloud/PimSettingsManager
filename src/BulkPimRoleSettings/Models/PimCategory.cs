@@ -9,6 +9,7 @@ public enum PimCategory
 
 public static class PimCategoryExtensions
 {
+    // Returns a user-friendly display name for the PimCategory enum values.
     public static string ToDisplayName(this PimCategory category) => category switch
     {
         PimCategory.EntraIdRoles => "Entra ID Roles",
