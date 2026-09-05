@@ -86,12 +86,15 @@ public sealed class LogService
         }
     }
 
+    // The timestamp format is based on the current culture's short date and long time patterns.
+    // This ensures that the log file names are consistent with the user's locale settings.
     private static string GetOsTimestampFormat()
     {
         var dtf = CultureInfo.CurrentCulture.DateTimeFormat;
         return $"{dtf.ShortDatePattern} {dtf.LongTimePattern}";
     }
 
+    // Replaces invalid filename characters with a safe alternative (e.g., '-').
     private static string SanitizeForFileName(string input)
     {
         foreach (var invalid in Path.GetInvalidFileNameChars())
