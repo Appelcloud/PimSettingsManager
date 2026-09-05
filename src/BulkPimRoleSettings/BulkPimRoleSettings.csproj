@@ -93,7 +93,7 @@
 
   <!-- Publish Properties -->
   <PropertyGroup>
-    <BaseOutputPath>C:\VisualStudio\builds\PIMSettings-manager</BaseOutputPath>
+    <BaseOutputPath></BaseOutputPath>
     <ApplicationIcon>favicon.ico</ApplicationIcon>
     <AssemblyName>PIMSettings Manager</AssemblyName>
     <AssemblyTitle>PIMSettings Manager</AssemblyTitle>

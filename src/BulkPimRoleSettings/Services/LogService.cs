@@ -84,6 +84,24 @@ public sealed class LogService
         }
     }
 
+    private static string GetOsTimestampFormat()
+    {
+        var dtf = System.Globalization.CultureInfo.CurrentCulture.DateTimeFormat;
+        return $"{dtf.ShortDatePattern} {dtf.LongTimePattern}";
+    }
+
+    private static string SanitizeForFileName(string input)
+    {
+        foreach (var invalid in Path.GetInvalidFileNameChars())
+        {
+            input = input.Replace(invalid, '-');
+        }
+
+        // Use underscore for spaces to keep filename friendly
+        input = input.Replace(' ', '_');
+        return input;
+    }
+
     public string LogFilePath => _logFilePath;
 
     private void WriteRaw(string line)
@@ -174,5 +192,4 @@ public sealed class LogService
         Log(LogLevel.ERROR, LogCategory.SYSTEM, $"{prefix}: {ex.Message}");
         Log(LogLevel.DEBUG, LogCategory.SYSTEM, $"{ex.GetType().Name} StackTrace: {ex.StackTrace}");
     }
-
 }
