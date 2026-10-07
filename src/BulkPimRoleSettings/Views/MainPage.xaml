@@ -20,9 +20,10 @@
         <converters:RoleStatusToColorConverter x:Key="RoleStatusToColorConverter"/>
         <converters:RoleStatusToVisibilityConverter x:Key="RoleStatusToVisibilityConverter"/>
         <converters:RoleStatusToPendingVisibilityConverter x:Key="RoleStatusToPendingVisibilityConverter"/>
+        <converters:SizeFractionConverter x:Key="SizeFractionConverter"/>
     </Page.Resources>
 
-    <Grid>
+    <Grid x:Name="PageRoot">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
@@ -36,8 +37,10 @@
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
             <StackPanel>
-                <TextBlock Text="PIMSettings Manager" Style="{StaticResource TitleTextBlockStyle}"/>
+                <TextBlock Text="PIMSettings Manager" Style="{StaticResource TitleTextBlockStyle}"
+                           TextTrimming="CharacterEllipsis"/>
                 <TextBlock Text="{x:Bind ViewModel.StatusMessage, Mode=OneWay}"
+                           TextTrimming="CharacterEllipsis"
                            Foreground="{ThemeResource TextFillColorSecondaryBrush}" Margin="0,4,0,0"/>
             </StackPanel>
             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Spacing="8">
@@ -74,9 +77,12 @@
         <Grid Grid.Row="1" Padding="24">
             <Grid>
                 <!-- Step 0: Login -->
-                <StackPanel Visibility="{x:Bind ViewModel.CurrentStep, Mode=OneWay, Converter={StaticResource StepVisibilityConverter}, ConverterParameter=0}"
-                            VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="24" MaxWidth="900">
-                    <Image Source="ms-appx:///Assets/lockup-horizontal.png" Height="160" HorizontalAlignment="Center"/>
+                <ScrollViewer Visibility="{x:Bind ViewModel.CurrentStep, Mode=OneWay, Converter={StaticResource StepVisibilityConverter}, ConverterParameter=0}"
+                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                              VerticalScrollMode="Auto" VerticalContentAlignment="Center">
+                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="24" MaxWidth="900">
+                    <Image Source="ms-appx:///Assets/lockup-horizontal.png" MaxHeight="160" Stretch="Uniform"
+                           HorizontalAlignment="Center"/>
 
                     <StackPanel Spacing="12" HorizontalAlignment="Center">
                         <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Center">
@@ -91,10 +97,12 @@
                                    Foreground="IndianRed" TextWrapping="Wrap" TextAlignment="Center"/>
                     </StackPanel>
                 </StackPanel>
+                </ScrollViewer>
 
                 <!-- Step 1: Category Selection -->
-                <StackPanel Visibility="{x:Bind ViewModel.CurrentStep, Mode=OneWay, Converter={StaticResource StepVisibilityConverter}, ConverterParameter=1}"
-                            Spacing="16" MaxWidth="600">
+                <ScrollViewer Visibility="{x:Bind ViewModel.CurrentStep, Mode=OneWay, Converter={StaticResource StepVisibilityConverter}, ConverterParameter=1}"
+                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <StackPanel Spacing="16" MaxWidth="600" HorizontalAlignment="Left">
                     <TextBlock Text="Select PIM Categories" Style="{StaticResource SubtitleTextBlockStyle}"/>
                     <TextBlock Text="Choose which PIM categories to manage:" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
 
@@ -113,7 +121,8 @@
                     <StackPanel Visibility="{x:Bind ViewModel.IncludeGroups, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
                                 Spacing="8" Margin="28,0,0,0">
                         <ListView ItemsSource="{x:Bind ViewModel.AvailableGroups}" SelectionMode="Multiple"
-                                  MaxHeight="200" SelectionChanged="GroupList_SelectionChanged">
+                                  MaxHeight="{Binding ActualHeight, ElementName=PageRoot, Converter={StaticResource SizeFractionConverter}, ConverterParameter=0.45}"
+                                  SelectionChanged="GroupList_SelectionChanged">
                             <ListView.ItemTemplate>
                                 <DataTemplate x:DataType="models:AzureScope">
                                     <TextBlock Text="{x:Bind DisplayName}"/>
@@ -128,7 +137,7 @@
                                 Spacing="8" Margin="28,0,0,0">
                         <Button Content="Load Subscriptions" Command="{x:Bind ViewModel.LoadScopesCommand}"/>
                         <ListView ItemsSource="{x:Bind ViewModel.AvailableScopes}" SelectionMode="Multiple"
-                                  MaxHeight="200">
+                                  MaxHeight="{Binding ActualHeight, ElementName=PageRoot, Converter={StaticResource SizeFractionConverter}, ConverterParameter=0.45}">
                             <ListView.ItemTemplate>
                                 <DataTemplate>
                                     <TextBlock Text="{Binding DisplayName}"/>
@@ -148,6 +157,7 @@
                     </StackPanel>
                     <TextBlock Text="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}" Foreground="IndianRed" TextWrapping="Wrap"/>
                 </StackPanel>
+                </ScrollViewer>
 
                 <!-- Step 2: Role Selection -->
                 <Grid Visibility="{x:Bind ViewModel.CurrentStep, Mode=OneWay, Converter={StaticResource StepVisibilityConverter}, ConverterParameter=2}">
@@ -182,7 +192,8 @@
                     </Grid>
 
                     <ListView Grid.Row="3" ItemsSource="{x:Bind ViewModel.FilteredRolePolicies}" SelectionMode="None"
-                              MaxHeight="500">
+                              VerticalAlignment="Stretch"
+                              ScrollViewer.VerticalScrollBarVisibility="Auto">
                         <ListView.ItemTemplate>
                             <DataTemplate x:DataType="models:PimRolePolicy">
                                 <Grid Padding="4">
@@ -215,8 +226,9 @@
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
-                    <ScrollViewer x:Name="SettingsScrollViewer" Grid.Row="0">
-                    <StackPanel Spacing="16" MaxWidth="1000">
+                    <ScrollViewer x:Name="SettingsScrollViewer" Grid.Row="0"
+                                  VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Spacing="16" MaxWidth="1000" HorizontalAlignment="Left">
                         <StackPanel Orientation="Horizontal" Spacing="12">
                             <TextBlock Text="Configure Bulk Settings" Style="{StaticResource SubtitleTextBlockStyle}"/>
                             <Border Background="{ThemeResource AccentFillColorDefaultBrush}" CornerRadius="4" Padding="8,4" VerticalAlignment="Center">
@@ -240,12 +252,17 @@
                             <!-- Activation maximum duration -->
                             <StackPanel Spacing="4">
                                 <TextBlock Text="Activation maximum duration (hours)" FontWeight="SemiBold"/>
-                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Grid ColumnSpacing="8" HorizontalAlignment="Stretch" MaxWidth="400">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
                                     <Slider Value="{x:Bind ViewModel.EditSettings.ActivationMaxDurationHours, Mode=TwoWay}"
-                                            Minimum="0.5" Maximum="24" StepFrequency="0.5" Width="300"/>
-                                    <TextBlock Text="{x:Bind ViewModel.EditSettings.ActivationMaxDurationHours, Mode=OneWay}"
-                                               VerticalAlignment="Center" Width="30"/>
-                                </StackPanel>
+                                            Minimum="0.5" Maximum="24" StepFrequency="0.5"
+                                            HorizontalAlignment="Stretch" MinWidth="160"/>
+                                    <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.EditSettings.ActivationMaxDurationHours, Mode=OneWay}"
+                                               VerticalAlignment="Center" MinWidth="36"/>
+                                </Grid>
                             </StackPanel>
 
                             <!-- On activation, require -->
@@ -308,7 +325,8 @@
                                         </DataTemplate>
                                     </AutoSuggestBox.ItemTemplate>
                                 </AutoSuggestBox>
-                                <ListView ItemsSource="{x:Bind ViewModel.SelectedApprovers}" SelectionMode="None" MaxHeight="150">
+                                <ListView ItemsSource="{x:Bind ViewModel.SelectedApprovers}" SelectionMode="None"
+                                          MaxHeight="{Binding ActualHeight, ElementName=PageRoot, Converter={StaticResource SizeFractionConverter}, ConverterParameter=0.3}">
                                     <ListView.ItemTemplate>
                                         <DataTemplate x:DataType="models:DirectoryUser">
                                             <Grid ColumnSpacing="10" Padding="4,4">
@@ -385,30 +403,30 @@
                                 <!-- Header -->
                                 <Grid Padding="4,4" Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="2*"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="2*"/>
-                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="280"/>
+                                        <ColumnDefinition Width="120"/>
+                                        <ColumnDefinition Width="*" MinWidth="220"/>
+                                        <ColumnDefinition Width="140"/>
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Text="Type" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                    <TextBlock Grid.Column="1" Text="Default recipients" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                    <TextBlock Grid.Column="2" Text="Additional recipients" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                    <TextBlock Grid.Column="3" Text="Critical emails only" FontWeight="SemiBold" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                                    <TextBlock Grid.Column="1" Text="Default recipients" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                    <TextBlock Grid.Column="2" Text="Additional recipients" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap" Margin="8,0,8,0"/>
+                                    <TextBlock Grid.Column="3" Text="Critical emails only" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap" Margin="0"/>
                                 </Grid>
                                 <!-- Row: Admin -->
                                 <StackPanel>
                                     <Grid Padding="4,4">
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="2*"/>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="2*"/>
-                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="280"/>
+                                            <ColumnDefinition Width="120"/>
+                                            <ColumnDefinition Width="*" MinWidth="220"/>
+                                            <ColumnDefinition Width="140"/>
                                         </Grid.ColumnDefinitions>
                                         <TextBlock Text="Role assignment alert" VerticalAlignment="Center" TextWrapping="Wrap"/>
-                                        <CheckBox Grid.Column="1" Content="Admin" IsChecked="{x:Bind ViewModel.EditSettings.EligibleAssignmentAdmin.DefaultRecipients, Mode=TwoWay}"/>
-                                        <TextBox Grid.Column="2" PlaceholderText="Email IDs separated by semicolon"
+                                        <CheckBox Grid.Column="1" VerticalAlignment="Center" MinWidth="0" Content="Admin" IsChecked="{x:Bind ViewModel.EditSettings.EligibleAssignmentAdmin.DefaultRecipients, Mode=TwoWay}"/>
+                                        <TextBox Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Stretch" Margin="8,0,8,0" PlaceholderText="Email IDs separated by semicolon"
                                                  Text="{x:Bind ViewModel.EditSettings.EligibleAssignmentAdmin.AdditionalRecipients, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
-                                        <CheckBox Grid.Column="3" IsChecked="{x:Bind ViewModel.EditSettings.EligibleAssignmentAdmin.CriticalOnly, Mode=TwoWay}" Margin="16,0,0,0"
+                                        <CheckBox Grid.Column="3" VerticalAlignment="Center" HorizontalAlignment="Left" MinWidth="0" IsChecked="{x:Bind ViewModel.EditSettings.EligibleAssignmentAdmin.CriticalOnly, Mode=TwoWay}" Margin="0"
                                                   IsEnabled="{x:Bind ViewModel.EditSettings.EligibleAssignmentAdmin.DefaultRecipients, Mode=OneWay}"/>
                                     </Grid>
                                     <TextBlock Text="Enter valid email IDs separated by semicolon" Foreground="IndianRed" FontSize="11" Margin="4,0,0,4"
@@ -418,16 +436,16 @@
                                 <StackPanel>
                                     <Grid Padding="4,4">
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="2*"/>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="2*"/>
-                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="280"/>
+                                            <ColumnDefinition Width="120"/>
+                                            <ColumnDefinition Width="*" MinWidth="220"/>
+                                            <ColumnDefinition Width="140"/>
                                         </Grid.ColumnDefinitions>
                                         <TextBlock Text="Notification to the assigned user (assignee)" VerticalAlignment="Center" TextWrapping="Wrap"/>
-                                        <CheckBox Grid.Column="1" Content="Assignee" IsChecked="{x:Bind ViewModel.EditSettings.EligibleAssignmentAssignee.DefaultRecipients, Mode=TwoWay}"/>
-                                        <TextBox Grid.Column="2" PlaceholderText="Email IDs separated by semicolon"
+                                        <CheckBox Grid.Column="1" VerticalAlignment="Center" MinWidth="0" Content="Assignee" IsChecked="{x:Bind ViewModel.EditSettings.EligibleAssignmentAssignee.DefaultRecipients, Mode=TwoWay}"/>
+                                        <TextBox Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Stretch" Margin="8,0,8,0" PlaceholderText="Email IDs separated by semicolon"
                                                  Text="{x:Bind ViewModel.EditSettings.EligibleAssignmentAssignee.AdditionalRecipients, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
-                                        <CheckBox Grid.Column="3" IsChecked="{x:Bind ViewModel.EditSettings.EligibleAssignmentAssignee.CriticalOnly, Mode=TwoWay}" Margin="16,0,0,0"
+                                        <CheckBox Grid.Column="3" VerticalAlignment="Center" HorizontalAlignment="Left" MinWidth="0" IsChecked="{x:Bind ViewModel.EditSettings.EligibleAssignmentAssignee.CriticalOnly, Mode=TwoWay}" Margin="0"
                                                   IsEnabled="{x:Bind ViewModel.EditSettings.EligibleAssignmentAssignee.DefaultRecipients, Mode=OneWay}"/>
                                     </Grid>
                                     <TextBlock Text="Enter valid email IDs separated by semicolon" Foreground="IndianRed" FontSize="11" Margin="4,0,0,4"
@@ -437,16 +455,16 @@
                                 <StackPanel>
                                     <Grid Padding="4,4">
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="2*"/>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="2*"/>
-                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="280"/>
+                                            <ColumnDefinition Width="120"/>
+                                            <ColumnDefinition Width="*" MinWidth="220"/>
+                                            <ColumnDefinition Width="140"/>
                                         </Grid.ColumnDefinitions>
                                         <TextBlock Text="Request to approve a role assignment renewal/extension" VerticalAlignment="Center" TextWrapping="Wrap"/>
-                                        <CheckBox Grid.Column="1" Content="Approver" IsChecked="{x:Bind ViewModel.EditSettings.EligibleAssignmentApprover.DefaultRecipients, Mode=TwoWay}"/>
-                                        <TextBox Grid.Column="2" PlaceholderText="Email IDs separated by semicolon"
+                                        <CheckBox Grid.Column="1" VerticalAlignment="Center" MinWidth="0" Content="Approver" IsChecked="{x:Bind ViewModel.EditSettings.EligibleAssignmentApprover.DefaultRecipients, Mode=TwoWay}"/>
+                                        <TextBox Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Stretch" Margin="8,0,8,0" PlaceholderText="Email IDs separated by semicolon"
                                                  Text="{x:Bind ViewModel.EditSettings.EligibleAssignmentApprover.AdditionalRecipients, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
-                                        <CheckBox Grid.Column="3" IsChecked="{x:Bind ViewModel.EditSettings.EligibleAssignmentApprover.CriticalOnly, Mode=TwoWay}" Margin="16,0,0,0"
+                                        <CheckBox Grid.Column="3" VerticalAlignment="Center" HorizontalAlignment="Left" MinWidth="0" IsChecked="{x:Bind ViewModel.EditSettings.EligibleAssignmentApprover.CriticalOnly, Mode=TwoWay}" Margin="0"
                                                   IsEnabled="{x:Bind ViewModel.EditSettings.EligibleAssignmentApprover.DefaultRecipients, Mode=OneWay}"/>
                                     </Grid>
                                     <TextBlock Text="Enter valid email IDs separated by semicolon" Foreground="IndianRed" FontSize="11" Margin="4,0,0,4"
@@ -459,29 +477,29 @@
                                 <TextBlock Text="Send notifications when members are assigned as active to this role:" FontWeight="SemiBold" TextWrapping="Wrap"/>
                                 <Grid Padding="4,4" Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="2*"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="2*"/>
-                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="280"/>
+                                        <ColumnDefinition Width="120"/>
+                                        <ColumnDefinition Width="*" MinWidth="220"/>
+                                        <ColumnDefinition Width="140"/>
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Text="Type" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                    <TextBlock Grid.Column="1" Text="Default recipients" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                    <TextBlock Grid.Column="2" Text="Additional recipients" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                    <TextBlock Grid.Column="3" Text="Critical emails only" FontWeight="SemiBold" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                                    <TextBlock Grid.Column="1" Text="Default recipients" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                    <TextBlock Grid.Column="2" Text="Additional recipients" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap" Margin="8,0,8,0"/>
+                                    <TextBlock Grid.Column="3" Text="Critical emails only" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap" Margin="0"/>
                                 </Grid>
                                 <StackPanel>
                                     <Grid Padding="4,4">
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="2*"/>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="2*"/>
-                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="280"/>
+                                            <ColumnDefinition Width="120"/>
+                                            <ColumnDefinition Width="*" MinWidth="220"/>
+                                            <ColumnDefinition Width="140"/>
                                         </Grid.ColumnDefinitions>
                                         <TextBlock Text="Role assignment alert" VerticalAlignment="Center" TextWrapping="Wrap"/>
-                                        <CheckBox Grid.Column="1" Content="Admin" IsChecked="{x:Bind ViewModel.EditSettings.ActiveAssignmentAdmin.DefaultRecipients, Mode=TwoWay}"/>
-                                        <TextBox Grid.Column="2" PlaceholderText="Email IDs separated by semicolon"
+                                        <CheckBox Grid.Column="1" VerticalAlignment="Center" MinWidth="0" Content="Admin" IsChecked="{x:Bind ViewModel.EditSettings.ActiveAssignmentAdmin.DefaultRecipients, Mode=TwoWay}"/>
+                                        <TextBox Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Stretch" Margin="8,0,8,0" PlaceholderText="Email IDs separated by semicolon"
                                                  Text="{x:Bind ViewModel.EditSettings.ActiveAssignmentAdmin.AdditionalRecipients, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
-                                        <CheckBox Grid.Column="3" IsChecked="{x:Bind ViewModel.EditSettings.ActiveAssignmentAdmin.CriticalOnly, Mode=TwoWay}" Margin="16,0,0,0"
+                                        <CheckBox Grid.Column="3" VerticalAlignment="Center" HorizontalAlignment="Left" MinWidth="0" IsChecked="{x:Bind ViewModel.EditSettings.ActiveAssignmentAdmin.CriticalOnly, Mode=TwoWay}" Margin="0"
                                                   IsEnabled="{x:Bind ViewModel.EditSettings.ActiveAssignmentAdmin.DefaultRecipients, Mode=OneWay}"/>
                                     </Grid>
                                     <TextBlock Text="Enter valid email IDs separated by semicolon" Foreground="IndianRed" FontSize="11" Margin="4,0,0,4"
@@ -490,16 +508,16 @@
                                 <StackPanel>
                                     <Grid Padding="4,4">
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="2*"/>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="2*"/>
-                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="280"/>
+                                            <ColumnDefinition Width="120"/>
+                                            <ColumnDefinition Width="*" MinWidth="220"/>
+                                            <ColumnDefinition Width="140"/>
                                         </Grid.ColumnDefinitions>
                                         <TextBlock Text="Notification to the assigned user (assignee)" VerticalAlignment="Center" TextWrapping="Wrap"/>
-                                        <CheckBox Grid.Column="1" Content="Assignee" IsChecked="{x:Bind ViewModel.EditSettings.ActiveAssignmentAssignee.DefaultRecipients, Mode=TwoWay}"/>
-                                        <TextBox Grid.Column="2" PlaceholderText="Email IDs separated by semicolon"
+                                        <CheckBox Grid.Column="1" VerticalAlignment="Center" MinWidth="0" Content="Assignee" IsChecked="{x:Bind ViewModel.EditSettings.ActiveAssignmentAssignee.DefaultRecipients, Mode=TwoWay}"/>
+                                        <TextBox Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Stretch" Margin="8,0,8,0" PlaceholderText="Email IDs separated by semicolon"
                                                  Text="{x:Bind ViewModel.EditSettings.ActiveAssignmentAssignee.AdditionalRecipients, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
-                                        <CheckBox Grid.Column="3" IsChecked="{x:Bind ViewModel.EditSettings.ActiveAssignmentAssignee.CriticalOnly, Mode=TwoWay}" Margin="16,0,0,0"
+                                        <CheckBox Grid.Column="3" VerticalAlignment="Center" HorizontalAlignment="Left" MinWidth="0" IsChecked="{x:Bind ViewModel.EditSettings.ActiveAssignmentAssignee.CriticalOnly, Mode=TwoWay}" Margin="0"
                                                   IsEnabled="{x:Bind ViewModel.EditSettings.ActiveAssignmentAssignee.DefaultRecipients, Mode=OneWay}"/>
                                     </Grid>
                                     <TextBlock Text="Enter valid email IDs separated by semicolon" Foreground="IndianRed" FontSize="11" Margin="4,0,0,4"
@@ -508,16 +526,16 @@
                                 <StackPanel>
                                     <Grid Padding="4,4">
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="2*"/>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="2*"/>
-                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="280"/>
+                                            <ColumnDefinition Width="120"/>
+                                            <ColumnDefinition Width="*" MinWidth="220"/>
+                                            <ColumnDefinition Width="140"/>
                                         </Grid.ColumnDefinitions>
                                         <TextBlock Text="Request to approve a role assignment renewal/extension" VerticalAlignment="Center" TextWrapping="Wrap"/>
-                                        <CheckBox Grid.Column="1" Content="Approver" IsChecked="{x:Bind ViewModel.EditSettings.ActiveAssignmentApprover.DefaultRecipients, Mode=TwoWay}"/>
-                                        <TextBox Grid.Column="2" PlaceholderText="Email IDs separated by semicolon"
+                                        <CheckBox Grid.Column="1" VerticalAlignment="Center" MinWidth="0" Content="Approver" IsChecked="{x:Bind ViewModel.EditSettings.ActiveAssignmentApprover.DefaultRecipients, Mode=TwoWay}"/>
+                                        <TextBox Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Stretch" Margin="8,0,8,0" PlaceholderText="Email IDs separated by semicolon"
                                                  Text="{x:Bind ViewModel.EditSettings.ActiveAssignmentApprover.AdditionalRecipients, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
-                                        <CheckBox Grid.Column="3" IsChecked="{x:Bind ViewModel.EditSettings.ActiveAssignmentApprover.CriticalOnly, Mode=TwoWay}" Margin="16,0,0,0"
+                                        <CheckBox Grid.Column="3" VerticalAlignment="Center" HorizontalAlignment="Left" MinWidth="0" IsChecked="{x:Bind ViewModel.EditSettings.ActiveAssignmentApprover.CriticalOnly, Mode=TwoWay}" Margin="0"
                                                   IsEnabled="{x:Bind ViewModel.EditSettings.ActiveAssignmentApprover.DefaultRecipients, Mode=OneWay}"/>
                                     </Grid>
                                     <TextBlock Text="Enter valid email IDs separated by semicolon" Foreground="IndianRed" FontSize="11" Margin="4,0,0,4"
@@ -530,29 +548,29 @@
                                 <TextBlock Text="Send notifications when eligible members activate this role:" FontWeight="SemiBold" TextWrapping="Wrap"/>
                                 <Grid Padding="4,4" Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="2*"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="2*"/>
-                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="280"/>
+                                        <ColumnDefinition Width="120"/>
+                                        <ColumnDefinition Width="*" MinWidth="220"/>
+                                        <ColumnDefinition Width="140"/>
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Text="Type" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                    <TextBlock Grid.Column="1" Text="Default recipients" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                    <TextBlock Grid.Column="2" Text="Additional recipients" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                    <TextBlock Grid.Column="3" Text="Critical emails only" FontWeight="SemiBold" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                                    <TextBlock Grid.Column="1" Text="Default recipients" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                    <TextBlock Grid.Column="2" Text="Additional recipients" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap" Margin="8,0,8,0"/>
+                                    <TextBlock Grid.Column="3" Text="Critical emails only" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap" Margin="0"/>
                                 </Grid>
                                 <StackPanel>
                                     <Grid Padding="4,4">
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="2*"/>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="2*"/>
-                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="280"/>
+                                            <ColumnDefinition Width="120"/>
+                                            <ColumnDefinition Width="*" MinWidth="220"/>
+                                            <ColumnDefinition Width="140"/>
                                         </Grid.ColumnDefinitions>
                                         <TextBlock Text="Role activation alert" VerticalAlignment="Center" TextWrapping="Wrap"/>
-                                        <CheckBox Grid.Column="1" Content="Admin" IsChecked="{x:Bind ViewModel.EditSettings.ActivationAdmin.DefaultRecipients, Mode=TwoWay}"/>
-                                        <TextBox Grid.Column="2" PlaceholderText="Email IDs separated by semicolon"
+                                        <CheckBox Grid.Column="1" VerticalAlignment="Center" MinWidth="0" Content="Admin" IsChecked="{x:Bind ViewModel.EditSettings.ActivationAdmin.DefaultRecipients, Mode=TwoWay}"/>
+                                        <TextBox Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Stretch" Margin="8,0,8,0" PlaceholderText="Email IDs separated by semicolon"
                                                  Text="{x:Bind ViewModel.EditSettings.ActivationAdmin.AdditionalRecipients, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
-                                        <CheckBox Grid.Column="3" IsChecked="{x:Bind ViewModel.EditSettings.ActivationAdmin.CriticalOnly, Mode=TwoWay}" Margin="16,0,0,0"
+                                        <CheckBox Grid.Column="3" VerticalAlignment="Center" HorizontalAlignment="Left" MinWidth="0" IsChecked="{x:Bind ViewModel.EditSettings.ActivationAdmin.CriticalOnly, Mode=TwoWay}" Margin="0"
                                                   IsEnabled="{x:Bind ViewModel.EditSettings.ActivationAdmin.DefaultRecipients, Mode=OneWay}"/>
                                     </Grid>
                                     <TextBlock Text="Enter valid email IDs separated by semicolon" Foreground="IndianRed" FontSize="11" Margin="4,0,0,4"
@@ -561,16 +579,16 @@
                                 <StackPanel>
                                     <Grid Padding="4,4">
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="2*"/>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="2*"/>
-                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="280"/>
+                                            <ColumnDefinition Width="120"/>
+                                            <ColumnDefinition Width="*" MinWidth="220"/>
+                                            <ColumnDefinition Width="140"/>
                                         </Grid.ColumnDefinitions>
                                         <TextBlock Text="Notification to activated user (requestor)" VerticalAlignment="Center" TextWrapping="Wrap"/>
-                                        <CheckBox Grid.Column="1" Content="Requestor" IsChecked="{x:Bind ViewModel.EditSettings.ActivationRequestor.DefaultRecipients, Mode=TwoWay}"/>
-                                        <TextBox Grid.Column="2" PlaceholderText="Email IDs separated by semicolon"
+                                        <CheckBox Grid.Column="1" VerticalAlignment="Center" MinWidth="0" Content="Requestor" IsChecked="{x:Bind ViewModel.EditSettings.ActivationRequestor.DefaultRecipients, Mode=TwoWay}"/>
+                                        <TextBox Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Stretch" Margin="8,0,8,0" PlaceholderText="Email IDs separated by semicolon"
                                                  Text="{x:Bind ViewModel.EditSettings.ActivationRequestor.AdditionalRecipients, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
-                                        <CheckBox Grid.Column="3" IsChecked="{x:Bind ViewModel.EditSettings.ActivationRequestor.CriticalOnly, Mode=TwoWay}" Margin="16,0,0,0"
+                                        <CheckBox Grid.Column="3" VerticalAlignment="Center" HorizontalAlignment="Left" MinWidth="0" IsChecked="{x:Bind ViewModel.EditSettings.ActivationRequestor.CriticalOnly, Mode=TwoWay}" Margin="0"
                                                   IsEnabled="{x:Bind ViewModel.EditSettings.ActivationRequestor.DefaultRecipients, Mode=OneWay}"/>
                                     </Grid>
                                     <TextBlock Text="Enter valid email IDs separated by semicolon" Foreground="IndianRed" FontSize="11" Margin="4,0,0,4"
@@ -579,15 +597,15 @@
                                 <StackPanel>
                                     <Grid Padding="4,4">
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="2*"/>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="2*"/>
-                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="280"/>
+                                            <ColumnDefinition Width="120"/>
+                                            <ColumnDefinition Width="*" MinWidth="220"/>
+                                            <ColumnDefinition Width="140"/>
                                         </Grid.ColumnDefinitions>
                                         <TextBlock Text="Request to approve an activation" VerticalAlignment="Center" TextWrapping="Wrap"/>
-                                        <CheckBox Grid.Column="1" Content="Approver" IsChecked="{x:Bind ViewModel.EditSettings.ActivationApprover.DefaultRecipients, Mode=TwoWay}"/>
-                                        <TextBox Grid.Column="2" PlaceholderText="Only designated approvers can receive this email" IsEnabled="False"/>
-                                        <CheckBox Grid.Column="3" IsChecked="{x:Bind ViewModel.EditSettings.ActivationApprover.CriticalOnly, Mode=TwoWay}" Margin="16,0,0,0"
+                                        <CheckBox Grid.Column="1" VerticalAlignment="Center" MinWidth="0" Content="Approver" IsChecked="{x:Bind ViewModel.EditSettings.ActivationApprover.DefaultRecipients, Mode=TwoWay}"/>
+                                        <TextBox Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Stretch" Margin="8,0,8,0" PlaceholderText="Only designated approvers can receive this email" IsEnabled="False"/>
+                                        <CheckBox Grid.Column="3" VerticalAlignment="Center" HorizontalAlignment="Left" MinWidth="0" IsChecked="{x:Bind ViewModel.EditSettings.ActivationApprover.CriticalOnly, Mode=TwoWay}" Margin="0"
                                                   IsEnabled="{x:Bind ViewModel.EditSettings.ActivationApprover.DefaultRecipients, Mode=OneWay}"/>
                                     </Grid>
                                 </StackPanel>
@@ -616,7 +634,7 @@
                     <TextBlock Grid.Row="1" Text="{x:Bind ViewModel.StatusMessage, Mode=OneWay}"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" Margin="0,4,0,12"/>
 
-                    <ScrollViewer Grid.Row="2" MaxHeight="500">
+                    <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                         <ItemsRepeater ItemsSource="{x:Bind ViewModel.CategoryPreviewGroups}">
                             <ItemsRepeater.ItemTemplate>
                                 <DataTemplate x:DataType="models:CategoryPreviewGroup">
@@ -687,33 +705,35 @@
                 </Grid>
 
                 <!-- Step 5: Apply Progress -->
-                <StackPanel Visibility="{x:Bind ViewModel.CurrentStep, Mode=OneWay, Converter={StaticResource StepVisibilityConverter}, ConverterParameter=5}"
-                            Spacing="16" MaxWidth="600">
+                <ScrollViewer Visibility="{x:Bind ViewModel.CurrentStep, Mode=OneWay, Converter={StaticResource StepVisibilityConverter}, ConverterParameter=5}"
+                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <StackPanel Spacing="16" MaxWidth="760" HorizontalAlignment="Left" Margin="0,0,12,0">
                     <TextBlock Text="Applying Changes" Style="{StaticResource SubtitleTextBlockStyle}"/>
                     <ProgressBar Value="{x:Bind ViewModel.ApplyProgress, Mode=OneWay}" Maximum="100"/>
-                    <TextBlock Text="{x:Bind ViewModel.ApplyStatus, Mode=OneWay}"/>
-                    <Grid>
+                    <TextBlock Text="{x:Bind ViewModel.ApplyStatus, Mode=OneWay}" TextWrapping="Wrap"/>
+                    <!-- ColumnSpacing keeps the counters from running into each other. -->
+                    <Grid ColumnSpacing="24">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*" MinWidth="100"/>
+                            <ColumnDefinition Width="*" MinWidth="100"/>
+                            <ColumnDefinition Width="*" MinWidth="100"/>
                         </Grid.ColumnDefinitions>
-                        <StackPanel>
+                        <StackPanel Spacing="2">
                             <TextBlock Text="Total" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                             <TextBlock Text="{x:Bind ViewModel.ApplyTotal, Mode=OneWay}" Style="{StaticResource BodyStrongTextBlockStyle}"/>
                         </StackPanel>
-                        <StackPanel Grid.Column="1">
+                        <StackPanel Grid.Column="1" Spacing="2">
                             <TextBlock Text="Succeeded" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                             <TextBlock Text="{x:Bind ViewModel.ApplyCompleted, Mode=OneWay}" Style="{StaticResource BodyStrongTextBlockStyle}" Foreground="LightGreen"/>
                         </StackPanel>
-                        <StackPanel Grid.Column="2">
+                        <StackPanel Grid.Column="2" Spacing="2">
                             <TextBlock Text="Failed" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                             <TextBlock Text="{x:Bind ViewModel.ApplyFailed, Mode=OneWay}" Style="{StaticResource BodyStrongTextBlockStyle}" Foreground="IndianRed"/>
                         </StackPanel>
                     </Grid>
 
                     <!-- Roles with status indicators grouped by category -->
-                    <ItemsRepeater ItemsSource="{x:Bind ViewModel.AppliedCategoryGroups}">
+                    <ItemsRepeater ItemsSource="{x:Bind ViewModel.AppliedCategoryGroups}" HorizontalAlignment="Stretch">
                         <ItemsRepeater.ItemTemplate>
                             <DataTemplate x:DataType="models:CategoryApplyGroup">
                                 <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,4,0,0">
@@ -728,15 +748,22 @@
                                         </StackPanel>
                                     </Expander.Header>
                                     <Expander.Content>
-                                        <ListView ItemsSource="{x:Bind Roles}" SelectionMode="None" MaxHeight="200">
+                                        <ListView ItemsSource="{x:Bind Roles}" SelectionMode="None"
+                                                  HorizontalAlignment="Stretch"
+                                                  MaxHeight="{Binding ActualHeight, ElementName=PageRoot, Converter={StaticResource SizeFractionConverter}, ConverterParameter=0.45}">
+                                            <ListView.ItemContainerStyle>
+                                                <Style TargetType="ListViewItem">
+                                                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                                </Style>
+                                            </ListView.ItemContainerStyle>
                                             <ListView.ItemTemplate>
                                                 <DataTemplate x:DataType="models:RoleApplyResult">
-                                                    <Grid Padding="4,4" ColumnSpacing="8">
+                                                    <Grid Padding="4,6" ColumnSpacing="16">
                                                         <Grid.ColumnDefinitions>
                                                             <ColumnDefinition Width="*"/>
                                                             <ColumnDefinition Width="Auto"/>
                                                         </Grid.ColumnDefinitions>
-                                                        <TextBlock Text="{x:Bind RoleName}" VerticalAlignment="Center"/>
+                                                        <TextBlock Text="{x:Bind RoleName}" VerticalAlignment="Center" TextWrapping="Wrap"/>
                                                         <ProgressRing Grid.Column="1" IsActive="True" Width="16" Height="16"
                                                                       Visibility="{x:Bind Status, Mode=OneWay, Converter={StaticResource RoleStatusToPendingVisibilityConverter}}"/>
                                                         <FontIcon Grid.Column="1"
@@ -760,16 +787,18 @@
                             Style="{StaticResource AccentButtonStyle}" Margin="0,8,0,0"/>
 
                     <!-- Errors section -->
-                    <ListView ItemsSource="{x:Bind ViewModel.ApplyErrors}" SelectionMode="None" MaxHeight="150">
+                    <ListView ItemsSource="{x:Bind ViewModel.ApplyErrors}" SelectionMode="None"
+                              MaxHeight="{Binding ActualHeight, ElementName=PageRoot, Converter={StaticResource SizeFractionConverter}, ConverterParameter=0.3}">
                         <ListView.ItemTemplate>
                             <DataTemplate x:DataType="x:String">
                                 <TextBlock Text="{x:Bind}" Foreground="IndianRed" TextWrapping="Wrap" Margin="0,2"/>
-                            </DataTemplate>
-                        </ListView.ItemTemplate>
-                    </ListView>
-                </StackPanel>
-            </Grid>
-        </Grid>
+                                            </DataTemplate>
+                                        </ListView.ItemTemplate>
+                                    </ListView>
+                                    </StackPanel>
+                                    </ScrollViewer>
+                                </Grid>
+                            </Grid>
 
         <!-- Footer -->
         <Border Grid.Row="2" Padding="24,8" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"

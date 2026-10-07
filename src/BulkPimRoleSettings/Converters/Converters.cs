@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using BulkPimRoleSettings.Models;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Data;
@@ -174,6 +175,31 @@ public class RoleStatusToPendingVisibilityConverter : IValueConverter
         if (value is RoleApplyStatus status && status == RoleApplyStatus.Pending)
             return Visibility.Visible;
         return Visibility.Collapsed;
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, string language)
+        => throw new NotImplementedException();
+}
+
+/// <summary>
+/// Scales a measured size (typically ActualHeight) by a fraction supplied as ConverterParameter,
+/// so element heights adapt to the window instead of using hardcoded values.
+/// Falls back to a sensible minimum while the host is still being measured.
+/// </summary>
+public class SizeFractionConverter : IValueConverter
+{
+    private const double MinimumSize = 120d;
+
+    public object Convert(object value, Type targetType, object parameter, string language)
+    {
+        if (value is not double available || double.IsNaN(available) || available <= 0)
+            return MinimumSize;
+
+        var fraction = 0.4d;
+        if (parameter is string text && double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) && parsed > 0)
+            fraction = parsed;
+
+        return Math.Max(MinimumSize, available * fraction);
     }
 
     public object ConvertBack(object value, Type targetType, object parameter, string language)

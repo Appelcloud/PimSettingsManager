@@ -12,7 +12,7 @@ public partial class BulkEditSettings : ObservableObject
     // Activation
     [ObservableProperty] public partial double ActivationMaxDurationHours { get; set; }
 
-    // "On activation, require" — None means no MFA and no auth context
+    // "On activation, require" - None means no MFA and no auth context
     [ObservableProperty] public partial bool RequireNoneOnActivation { get; set; }
     [ObservableProperty] public partial bool RequireMfaOnActivation { get; set; }
     [ObservableProperty] public partial bool RequireAuthContextOnActivation { get; set; }
@@ -21,7 +21,7 @@ public partial class BulkEditSettings : ObservableObject
     [ObservableProperty] public partial bool RequireJustificationOnActivation { get; set; }
     [ObservableProperty] public partial bool RequireTicketOnActivation { get; set; }
 
-    // "Require approval to activate" — consolidated with approver search
+    // "Require approval to activate" - consolidated with approver search
     [ObservableProperty] public partial bool RequireApprovalToActivate { get; set; }
     [ObservableProperty] public partial string ApproversRaw { get; set; } // semicolon-separated "user:{id}"/"group:{id}" entries
 
@@ -35,7 +35,7 @@ public partial class BulkEditSettings : ObservableObject
     [ObservableProperty] public partial bool RequireMfaOnActiveAssignment { get; set; }
     [ObservableProperty] public partial bool RequireJustificationOnActiveAssignment { get; set; }
 
-    // Notifications — per-row (Type × Admin/Assignee/Approver)
+    // Notifications - per-row (Type × Admin/Assignee/Approver)
     // Eligible assignment
     [ObservableProperty] public partial NotificationRowSettings EligibleAssignmentAdmin { get; set; }
     [ObservableProperty] public partial NotificationRowSettings EligibleAssignmentAssignee { get; set; }
