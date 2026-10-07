@@ -99,7 +99,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] public partial bool IsSingleSelectionSettings { get; set; }
     [ObservableProperty] public partial string SettingsSourceHint { get; set; } = string.Empty;
 
-    // Expiration dropdowns — index maps: 0=15d, 1=30d, 2=90d, 3=180d, 4=365d
+    // Expiration dropdowns - index maps: 0=15d, 1=30d, 2=90d, 3=180d, 4=365d
     [ObservableProperty] public partial int EligibleExpirationIndex { get; set; }
     [ObservableProperty] public partial int ActiveExpirationIndex { get; set; }
 
@@ -180,13 +180,32 @@ public partial class MainViewModel : ObservableObject
                 StatusMessage = $"Signed in as: {LoggedInUser}";
                 _log.Log(LogLevel.SUCCESS, LogCategory.AUTH, $"Login successful: {LoggedInUser}");
 
+                // Consent can be withheld for individual scopes even when sign-in
+                // succeeds, so check the issued scopes before calling Graph.
+                var missingScopes = _authService.GetMissingScopes();
+                if (missingScopes.Length > 0)
+                {
+                    ErrorMessage =
+                        $"Sign-in succeeded, but consent is missing for: {string.Join(", ", missingScopes)}. "
+                        + "An administrator must grant these delegated Microsoft Graph permissions before the tool can run.";
+                    _log.Log(LogLevel.ERROR, LogCategory.PERMISSION, ErrorMessage);
+                    return;
+                }
+
                 // Check permissions
                 StatusMessage = "Checking permissions...";
-                var (hasAccess, missing) = await _graphService.CheckPermissionsAsync();
-                if (!hasAccess)
+                var permissionCheck = await _graphService.CheckPermissionsAsync();
+                if (!permissionCheck.HasAccess)
                 {
-                    ErrorMessage = $"Insufficient permissions. Missing: {string.Join(", ", missing)}";
-                    _log.Log(LogLevel.ERROR, LogCategory.PERMISSION, ErrorMessage);
+                    // Show both the interpretation and the verbatim service error
+                    // so the user can act on it or forward it to support.
+                    ErrorMessage = string.IsNullOrWhiteSpace(permissionCheck.Detail)
+                        ? permissionCheck.Reason
+                        : $"{permissionCheck.Reason}{Environment.NewLine}{Environment.NewLine}Details from Microsoft Graph: {permissionCheck.Detail}";
+
+                    StatusMessage = string.Empty;
+                    _log.Log(LogLevel.ERROR, LogCategory.PERMISSION,
+                        $"Startup permission check failed. {permissionCheck.Reason} {permissionCheck.Detail}");
                     return;
                 }
 
@@ -196,7 +215,10 @@ public partial class MainViewModel : ObservableObject
             else
             {
                 StatusMessage = string.Empty;
-                ErrorMessage = "Sign-in was cancelled or did not complete. Please try again.";
+                var detail = _authService.LastErrorDetail;
+                ErrorMessage = string.IsNullOrWhiteSpace(detail)
+                    ? "Sign-in was cancelled or did not complete. Please try again."
+                    : $"Sign-in failed.{Environment.NewLine}{Environment.NewLine}{detail}";
             }
         }
         catch (Exception ex)
@@ -561,7 +583,7 @@ public partial class MainViewModel : ObservableObject
         {
             IsSingleSelectionSettings = false;
             SettingsSourceHint = selected.Count > 1
-                ? $"{selected.Count} items selected. Showing default settings — configure the values you want applied to all selected items."
+                ? $"{selected.Count} items selected. Showing default settings - configure the values you want applied to all selected items."
                 : "Showing default settings.";
             OnPropertyChanged(nameof(IsEligibleExpirationVisible));
             OnPropertyChanged(nameof(IsActiveExpirationVisible));
@@ -577,7 +599,12 @@ public partial class MainViewModel : ObservableObject
         // Activation max duration
         EditSettings.ActivationMaxDurationHours = current.ActivationMaxDurationHours;
 
-        // Activation "On activation, require" radio buttons
+        // Activation "On activation, require" radio buttons.
+        // The claim value is carried over regardless of which option is active so
+        // the dropdown keeps the role's configured context if the user switches
+        // to the authentication context option and back.
+        EditSettings.AuthContextClaimValue = current.AuthContextClaimValue ?? string.Empty;
+
         if (current.RequireMfaOnActivation)
         {
             EditSettings.RequireMfaOnActivation = true;
@@ -589,7 +616,6 @@ public partial class MainViewModel : ObservableObject
             EditSettings.RequireAuthContextOnActivation = true;
             EditSettings.RequireNoneOnActivation = false;
             EditSettings.RequireMfaOnActivation = false;
-            EditSettings.AuthContextClaimValue = current.AuthContextClaimValue ?? string.Empty;
         }
         else
         {
@@ -603,28 +629,51 @@ public partial class MainViewModel : ObservableObject
         EditSettings.RequireTicketOnActivation = current.RequireTicketOnActivation;
         EditSettings.RequireApprovalToActivate = current.RequireApprovalToActivate;
 
-        // Assignment
+        // Assignment. The dropdown index is always refreshed: leaving it at the
+        // previous role's value would show an expiration the role does not have.
         EditSettings.AllowPermanentEligibleAssignment = current.AllowPermanentEligibleAssignment;
-        if (current.ExpireEligibleAfterDays.HasValue)
-        {
-            EditSettings.ExpireEligibleAfterDays = current.ExpireEligibleAfterDays.Value;
-            EligibleExpirationIndex = DaysToExpirationIndex(current.ExpireEligibleAfterDays.Value);
-        }
+        var eligibleDays = current.ExpireEligibleAfterDays ?? 365;
+        EditSettings.ExpireEligibleAfterDays = eligibleDays;
+        EligibleExpirationIndex = DaysToExpirationIndex(eligibleDays);
 
         EditSettings.AllowPermanentActiveAssignment = current.AllowPermanentActiveAssignment;
-        if (current.ExpireActiveAfterDays.HasValue)
-        {
-            EditSettings.ExpireActiveAfterDays = current.ExpireActiveAfterDays.Value;
-            ActiveExpirationIndex = DaysToExpirationIndex(current.ExpireActiveAfterDays.Value);
-        }
+        var activeDays = current.ExpireActiveAfterDays ?? 365;
+        EditSettings.ExpireActiveAfterDays = activeDays;
+        ActiveExpirationIndex = DaysToExpirationIndex(activeDays);
 
         EditSettings.RequireMfaOnActiveAssignment = current.RequireMfaOnActiveAssignment;
         EditSettings.RequireJustificationOnActiveAssignment = current.RequireJustificationOnActiveAssignment;
+
+        // Notifications. Without this the nine rows keep their constructor
+        // defaults and the page shows settings the role does not actually have.
+        ApplyNotification(EditSettings.EligibleAssignmentAdmin, current.EligibleAssignmentAdminNotification);
+        ApplyNotification(EditSettings.EligibleAssignmentAssignee, current.EligibleAssignmentAssigneeNotification);
+        ApplyNotification(EditSettings.EligibleAssignmentApprover, current.EligibleAssignmentApproverNotification);
+
+        ApplyNotification(EditSettings.ActiveAssignmentAdmin, current.ActiveAssignmentAdminNotification);
+        ApplyNotification(EditSettings.ActiveAssignmentAssignee, current.ActiveAssignmentAssigneeNotification);
+        ApplyNotification(EditSettings.ActiveAssignmentApprover, current.ActiveAssignmentApproverNotification);
+
+        ApplyNotification(EditSettings.ActivationAdmin, current.ActivationAdminNotification);
+        ApplyNotification(EditSettings.ActivationRequestor, current.ActivationAssigneeNotification);
+        ApplyNotification(EditSettings.ActivationApprover, current.ActivationApproverNotification);
 
         // Notify visibility
         OnPropertyChanged(nameof(IsEligibleExpirationVisible));
         OnPropertyChanged(nameof(IsActiveExpirationVisible));
         OnPropertyChanged(nameof(IsApproverSearchVisible));
+    }
+
+    /// <summary>
+    /// Copies a notification rule from the fetched policy into the editable row.
+    /// The portal joins additional recipients with a semicolon, so the same
+    /// separator is used here to keep round-tripping lossless.
+    /// </summary>
+    private static void ApplyNotification(NotificationRowSettings row, NotificationSettings source)
+    {
+        row.DefaultRecipients = source.IsDefaultRecipientsEnabled;
+        row.CriticalOnly = source.CriticalEmailsOnly;
+        row.AdditionalRecipients = string.Join("; ", source.AdditionalRecipients);
     }
 
     #endregion
@@ -781,7 +830,7 @@ public partial class MainViewModel : ObservableObject
         }
         else
         {
-            // All phases configured — show combined preview
+            // All phases configured - show combined preview
             GeneratePreview();
             CurrentStep = 4;
         }
@@ -821,7 +870,7 @@ public partial class MainViewModel : ObservableObject
             AddBoolPreview(role, "Require Auth Context on Activation",
                 role.CurrentSettings.RequireAuthContextOnActivation, settings.RequireAuthContextOnActivation);
 
-            // Authentication context — show the selected context whenever it is (or was) required.
+            // Authentication context - show the selected context whenever it is (or was) required.
             if (settings.RequireAuthContextOnActivation || role.CurrentSettings.RequireAuthContextOnActivation)
             {
                 var currentAuth = role.CurrentSettings.RequireAuthContextOnActivation
@@ -844,7 +893,7 @@ public partial class MainViewModel : ObservableObject
                 }
             }
 
-            // Approver(s) — show names/details whenever approval is (or was) required.
+            // Approver(s) - show names/details whenever approval is (or was) required.
             if (settings.RequireApprovalToActivate || role.CurrentSettings.RequireApprovalToActivate)
             {
                 var currentApprovers = role.CurrentSettings.RequireApprovalToActivate
@@ -963,11 +1012,11 @@ public partial class MainViewModel : ObservableObject
         if (approvers == null || approvers.Count == 0)
             return "None";
 
-        // One approver per line: "Display Name (detail) — User/Group".
+        // One approver per line: "Display Name (detail) - User/Group".
         return string.Join(Environment.NewLine, approvers.Select(a =>
         {
             var detail = string.IsNullOrWhiteSpace(a.SecondaryText) ? string.Empty : $" ({a.SecondaryText})";
-            return $"{a.DisplayName}{detail} — {a.TypeLabel}";
+            return $"{a.DisplayName}{detail} - {a.TypeLabel}";
         }));
     }
 
@@ -1021,7 +1070,7 @@ public partial class MainViewModel : ObservableObject
         _log.Log(LogLevel.INFO, LogCategory.SETTINGS,
             $"Starting bulk apply to {ApplyTotal} roles...");
 
-        // Apply to roles concurrently (bounded) — each role is a single PATCH,
+        // Apply to roles concurrently (bounded) - each role is a single PATCH,
         // so parallelizing cuts total time dramatically vs. one-at-a-time.
         const int maxConcurrency = 5;
         using var throttler = new SemaphoreSlim(maxConcurrency);
@@ -1052,7 +1101,7 @@ public partial class MainViewModel : ObservableObject
         await throttler.WaitAsync();
         try
         {
-            _log.Log(LogLevel.INFO, LogCategory.SETTINGS,
+            _log.Log(LogLevel.DEBUG, LogCategory.SETTINGS,
                 $"[{role.Category.ToDisplayName()}] Applying to: {role.RoleDisplayName}...");
 
             var success = await _graphService.UpdatePolicyAsync(role, roleSettings);

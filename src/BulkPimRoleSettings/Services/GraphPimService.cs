@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -31,7 +32,7 @@ public sealed class GraphPimService
 
     /// <summary>
     /// Sends a Graph request using a per-request bearer token (thread-safe for
-    /// parallel calls — the shared client's default headers are never mutated)
+    /// parallel calls - the shared client's default headers are never mutated)
     /// and retries throttling/transient server errors (429/503/504), honoring
     /// the Retry-After header when present.
     /// </summary>
@@ -45,6 +46,16 @@ public sealed class GraphPimService
 
             using var request = new HttpRequestMessage(method, url);
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+            // PIM policies must always reflect the live tenant state, so prevent
+            // any intermediate proxy or handler from serving a cached response.
+            request.Headers.CacheControl = new CacheControlHeaderValue
+            {
+                NoCache = true,
+                NoStore = true
+            };
+            request.Headers.Pragma.ParseAdd("no-cache");
+
             if (jsonBody != null)
                 request.Content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
 
@@ -192,15 +203,106 @@ public sealed class GraphPimService
         return resolved;
     }
 
-    #region Permission Check
+    #region Graph Error Parsing
 
-    public async Task<(bool HasAccess, string[] MissingPermissions)> CheckPermissionsAsync()
+    /// <summary>
+    /// A parsed Microsoft Graph OData error envelope.
+    /// See https://learn.microsoft.com/graph/errors
+    /// </summary>
+    public sealed record GraphError(
+        int StatusCode,
+        string Code,
+        string Message,
+        string? RequestId,
+        string? InnerCode)
     {
+        /// <summary>
+        /// One-line, support-ready summary. Contains only the service-supplied
+        /// error code, message and request id - never tokens or user data.
+        /// </summary>
+        public string ToDisplayString()
+        {
+            var text = $"HTTP {StatusCode} {Code}: {Message}";
+            if (!string.IsNullOrWhiteSpace(InnerCode) && !string.Equals(InnerCode, Code, StringComparison.OrdinalIgnoreCase))
+                text += $" (inner: {InnerCode})";
+            if (!string.IsNullOrWhiteSpace(RequestId))
+                text += $" [request-id: {RequestId}]";
+            return text;
+        }
+    }
+
+    /// <summary>
+    /// Reads the Graph error envelope from a failed response. Falls back to the
+    /// status code when the body is missing or is not the expected shape, so a
+    /// malformed error can never mask the original failure.
+    /// </summary>
+    private static async Task<GraphError> ReadGraphErrorAsync(HttpResponseMessage response)
+    {
+        var status = (int)response.StatusCode;
+        var code = response.StatusCode.ToString();
+        var message = response.ReasonPhrase ?? "No error details were returned by Microsoft Graph.";
+        string? requestId = null;
+        string? innerCode = null;
+
+        // Graph echoes the request id in a header even when the body is empty.
+        if (response.Headers.TryGetValues("request-id", out var headerIds))
+            requestId = headerIds.FirstOrDefault();
+
         try
         {
-            // Check if user can read role management policies (basic access test)
-            // This endpoint requires a filter - use DirectoryRole scope which is always present
-            var url = $"{GraphBetaBase}/policies/roleManagementPolicies?$filter=scopeId eq '/' and scopeType eq 'DirectoryRole'&$top=1";
+            var body = await response.Content.ReadAsStringAsync();
+            if (!string.IsNullOrWhiteSpace(body) && JsonNode.Parse(body) is JsonObject root
+                && root["error"] is JsonObject error)
+            {
+                code = error["code"]?.GetValue<string>() ?? code;
+                message = error["message"]?.GetValue<string>() ?? message;
+
+                // Graph is inconsistent about the casing of this property.
+                var inner = error["innerError"] as JsonObject ?? error["innererror"] as JsonObject;
+                if (inner != null)
+                {
+                    innerCode = inner["code"]?.GetValue<string>();
+                    requestId = inner["request-id"]?.GetValue<string>()
+                        ?? inner["requestId"]?.GetValue<string>()
+                        ?? inner["client-request-id"]?.GetValue<string>()
+                        ?? requestId;
+                }
+            }
+        }
+        catch (Exception)
+        {
+            // Keep the status-code fallback; the caller still reports a precise
+            // HTTP status even when the body cannot be read or parsed.
+        }
+
+        return new GraphError(status, code, message, requestId, innerCode);
+    }
+
+    #endregion
+
+    #region Permission Check
+
+    /// <summary>
+    /// Outcome of the startup permission check. <see cref="Reason"/> is shown to
+    /// the user; <see cref="Detail"/> is the verbatim service error for the log.
+    /// </summary>
+    public sealed record PermissionCheckResult(bool HasAccess, string Reason, string Detail)
+    {
+        public static PermissionCheckResult Success() => new(true, string.Empty, string.Empty);
+        public static PermissionCheckResult Failure(string reason, string detail) => new(false, reason, detail);
+    }
+
+    /// <summary>
+    /// Verifies that the signed-in user can actually read PIM role management
+    /// policies. On failure the exact Graph error code, message and request id
+    /// are returned and logged so the cause is unambiguous.
+    /// </summary>
+    public async Task<PermissionCheckResult> CheckPermissionsAsync()
+    {
+        var url = $"{GraphBetaBase}/policies/roleManagementPolicies?$filter=scopeId eq '/' and scopeType eq 'DirectoryRole'&$top=1";
+
+        try
+        {
             _log.LogApiCall("GET", url);
 
             using var response = await SendWithRetryAsync(HttpMethod.Get, url);
@@ -208,33 +310,70 @@ public sealed class GraphPimService
 
             if (response.IsSuccessStatusCode)
             {
-                _log.Log(LogLevel.SUCCESS, LogCategory.PERMISSION, "User has required permissions.");
-                return (true, Array.Empty<string>());
+                _log.Log(LogLevel.SUCCESS, LogCategory.PERMISSION,
+                    "Permission check passed: the signed-in user can read PIM role management policies.");
+                return PermissionCheckResult.Success();
             }
 
-            if (response.StatusCode == HttpStatusCode.Forbidden)
-            {
-                _log.Log(LogLevel.WARN, LogCategory.PERMISSION,
-                    "User lacks required permissions. Status 403.");
-                return (false, new[] { "RoleManagementPolicy.ReadWrite.Directory" });
-            }
+            var error = await ReadGraphErrorAsync(response);
 
-            if (response.StatusCode == HttpStatusCode.Unauthorized)
-            {
-                _log.Log(LogLevel.WARN, LogCategory.PERMISSION,
-                    "User is unauthorized. Token may be invalid. Status 401.");
-                return (false, new[] { "Authentication token is invalid or expired." });
-            }
+            // Always record the verbatim service error so the log explains exactly
+            // why access was refused.
+            _log.Log(LogLevel.ERROR, LogCategory.PERMISSION,
+                $"Permission check failed for GET /policies/roleManagementPolicies. {error.ToDisplayString()}");
 
-            _log.Log(LogLevel.WARN, LogCategory.PERMISSION,
-                $"Unexpected status: {response.StatusCode}.");
-            return (false, new[] { $"Unexpected error: {response.StatusCode}" });
+            var reason = DescribePermissionFailure(error);
+            _log.Log(LogLevel.ERROR, LogCategory.PERMISSION, $"Interpretation: {reason}");
+
+            return PermissionCheckResult.Failure(reason, error.ToDisplayString());
         }
         catch (Exception ex)
         {
-            _log.LogError(ex, "Permission check failed.");
-            return (false, new[] { ex.Message });
+            _log.LogError(ex, "Permission check could not be completed.");
+            return PermissionCheckResult.Failure(
+                $"The permission check could not be completed: {ex.Message}",
+                $"{ex.GetType().Name}: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Turns a Graph error into an actionable explanation. The service code is
+    /// authoritative, so it drives the message rather than the HTTP status alone.
+    /// </summary>
+    private static string DescribePermissionFailure(GraphError error)
+    {
+        var requiredScopes = string.Join(", ", AuthService.RequiredScopes);
+
+        return error.Code switch
+        {
+            "Authorization_RequestDenied" =>
+                "Microsoft Graph denied the request. Your account is missing either the delegated permission "
+                + $"({requiredScopes}) or an Entra ID role that grants PIM access. Privileged Role Administrator "
+                + "or Global Administrator is normally required to read and modify PIM role settings.",
+
+            "Authorization_IdentityNotFound" =>
+                "The signed-in identity could not be resolved in this tenant. Confirm you signed in with an account "
+                + "that exists in the tenant you intend to manage.",
+
+            "InvalidAuthenticationToken" or "TokenNotFound" =>
+                "The access token was rejected by Microsoft Graph. Sign out and sign in again.",
+
+            "AadPremiumLicenseRequired" or "PimLicenseRequired" =>
+                "Privileged Identity Management requires a Microsoft Entra ID P2 or Microsoft Entra ID Governance licence, "
+                + "which this tenant does not appear to have.",
+
+            _ when error.StatusCode == 403 =>
+                "Microsoft Graph refused the request (403 Forbidden). This is normally missing consent for "
+                + $"({requiredScopes}) or a missing Entra ID role such as Privileged Role Administrator.",
+
+            _ when error.StatusCode == 401 =>
+                "Microsoft Graph rejected the credentials (401 Unauthorized). The token is invalid or expired; sign in again.",
+
+            _ when error.StatusCode == 404 =>
+                "The PIM endpoint was not found for this tenant, which usually means PIM is not enabled or licensed.",
+
+            _ => $"Microsoft Graph returned an unexpected error ({error.Code})."
+        };
     }
 
     #endregion
@@ -248,7 +387,7 @@ public sealed class GraphPimService
         try
         {
             // Role definitions (ID -> name) and policy assignments (policy -> role)
-            // are independent lookups — fetch them concurrently.
+            // are independent lookups - fetch them concurrently.
             var roleDefinitionsTask = GetRoleDefinitionsAsync();
             var policyToRoleMapTask = GetPolicyAssignmentsAsync();
             await Task.WhenAll(roleDefinitionsTask, policyToRoleMapTask);
@@ -286,7 +425,7 @@ public sealed class GraphPimService
                 policies.Add(policy);
             }
 
-            _log.Log(LogLevel.SUCCESS, LogCategory.API, $"Retrieved {policies.Count} Entra ID role policies.");
+            _log.Log(LogLevel.DEBUG, LogCategory.API, $"Retrieved {policies.Count} Entra ID role policies.");
         }
         catch (Exception ex)
         {
@@ -317,7 +456,7 @@ public sealed class GraphPimService
                 }
             }
 
-            _log.Log(LogLevel.INFO, LogCategory.API, $"Retrieved {map.Count} policy assignments for role mapping.");
+            _log.Log(LogLevel.DEBUG, LogCategory.API, $"Retrieved {map.Count} policy assignments for role mapping.");
         }
         catch (Exception ex)
         {
@@ -346,7 +485,7 @@ public sealed class GraphPimService
                 }
             }
 
-            _log.Log(LogLevel.INFO, LogCategory.API, $"Retrieved {roleMap.Count} role definitions for name resolution.");
+            _log.Log(LogLevel.DEBUG, LogCategory.API, $"Retrieved {roleMap.Count} role definitions for name resolution.");
         }
         catch (Exception ex)
         {
@@ -385,7 +524,7 @@ public sealed class GraphPimService
                 }
             }
 
-            _log.Log(LogLevel.SUCCESS, LogCategory.API, $"Retrieved {scopes.Count} Azure resource scopes.");
+            _log.Log(LogLevel.DEBUG, LogCategory.API, $"Retrieved {scopes.Count} Azure resource scopes.");
         }
         catch (Exception ex)
         {
@@ -426,7 +565,7 @@ public sealed class GraphPimService
                 policies.Add(policy);
             }
 
-            _log.Log(LogLevel.SUCCESS, LogCategory.API,
+            _log.Log(LogLevel.DEBUG, LogCategory.API,
                 $"Retrieved {policies.Count} Azure resource role policies for resource {resourceId}.");
         }
         catch (Exception ex)
@@ -457,11 +596,11 @@ public sealed class GraphPimService
         foreach (var item in values)
         {
             var id = item["id"]?.GetValue<string>();
-            // Group IDs are interpolated into $filter clauses below — only accept well-formed GUIDs.
+            // Group IDs are interpolated into $filter clauses below - only accept well-formed GUIDs.
             if (!string.IsNullOrEmpty(id) && Guid.TryParse(id, out _)) groupIds.Add(id);
         }
 
-        _log.Log(LogLevel.INFO, LogCategory.API, $"Discovered {groupIds.Count} PIM-onboarded groups.");
+        _log.Log(LogLevel.DEBUG, LogCategory.API, $"Discovered {groupIds.Count} PIM-onboarded groups.");
 
         // Step 2: Resolve display names in batches
         foreach (var batch in groupIds.Chunk(15))
@@ -507,7 +646,7 @@ public sealed class GraphPimService
 
         try
         {
-            // Each group is an independent Graph call — run them with bounded
+            // Each group is an independent Graph call - run them with bounded
             // parallelism to keep load times flat as group count grows.
             using var throttler = new SemaphoreSlim(MaxFetchConcurrency);
             var tasks = selectedGroups.Select(async group =>
@@ -573,7 +712,7 @@ public sealed class GraphPimService
             // Deterministic ordering regardless of task completion order.
             policies.Sort((a, b) => string.Compare(a.RoleDisplayName, b.RoleDisplayName, StringComparison.OrdinalIgnoreCase));
 
-            _log.Log(LogLevel.SUCCESS, LogCategory.API, $"Retrieved {policies.Count} group policies.");
+            _log.Log(LogLevel.DEBUG, LogCategory.API, $"Retrieved {policies.Count} group policies.");
         }
         catch (Exception ex)
         {
@@ -597,7 +736,7 @@ public sealed class GraphPimService
         // filter injection), then URL-encode the whole value.
         var encoded = Uri.EscapeDataString(EscapeODataString(query.Trim()));
 
-        // Search users and groups concurrently — independent requests.
+        // Search users and groups concurrently - independent requests.
         var userTask = SearchDirectoryAsync(
             $"{GraphBetaBase}/users?$filter=startswith(displayName,'{encoded}') or startswith(userPrincipalName,'{encoded}')&$top=10&$select=id,displayName,userPrincipalName",
             isGroup: false, query);
@@ -655,16 +794,17 @@ public sealed class GraphPimService
     {
         try
         {
-            var rules = BuildPolicyRules(rolePolicy, settings);
+            var changes = new List<string>();
+            var rules = BuildPolicyRules(rolePolicy, settings, changes);
             if (rules.Count == 0)
             {
-                _log.Log(LogLevel.INFO, LogCategory.SETTINGS,
+                _log.Log(LogLevel.DEBUG, LogCategory.SETTINGS,
                     $"No changes to apply for: {rolePolicy.RoleDisplayName}");
                 return true;
             }
 
             // Update all rules in a single PATCH on the policy instead of one
-            // request per rule — dramatically fewer round-trips per role/group.
+            // request per rule - dramatically fewer round-trips per role/group.
             var url = $"{GraphBetaBase}/policies/roleManagementPolicies/{rolePolicy.PolicyId}";
             var body = JsonSerializer.Serialize(new Dictionary<string, object>
             {
@@ -673,8 +813,21 @@ public sealed class GraphPimService
 
             await PatchAsync(url, body);
 
+            if (changes.Count == 0)
+            {
+                _log.Log(LogLevel.SUCCESS, LogCategory.SETTINGS,
+                    $"Applied to '{rolePolicy.RoleDisplayName}': no settings differed from the current configuration.");
+                return true;
+            }
+
             _log.Log(LogLevel.SUCCESS, LogCategory.SETTINGS,
-                $"Updated {rules.Count} rules for '{rolePolicy.RoleDisplayName}' in a single request");
+                $"Applied {changes.Count} setting(s) to '{rolePolicy.RoleDisplayName}':");
+
+            foreach (var change in changes)
+            {
+                _log.Log(LogLevel.SUCCESS, LogCategory.SETTINGS,
+                    $"    {rolePolicy.RoleDisplayName} | {change}");
+            }
 
             return true;
         }
@@ -709,7 +862,7 @@ public sealed class GraphPimService
                     ParseEnablementRule(rule, ruleId, policy);
                     break;
                 case "#microsoft.graph.unifiedRoleManagementPolicyApprovalRule":
-                    ParseApprovalRule(rule, policy);
+                    ParseApprovalRule(rule, ruleId, policy);
                     break;
                 case "#microsoft.graph.unifiedRoleManagementPolicyNotificationRule":
                     ParseNotificationRule(rule, ruleId, policy);
@@ -717,68 +870,100 @@ public sealed class GraphPimService
                 case "#microsoft.graph.unifiedRoleManagementPolicyAuthenticationContextRule":
                     ParseAuthContextRule(rule, policy);
                     break;
+                case "#microsoft.graph.unifiedRoleManagementPolicyCustomExtensionRule":
+                    // Known Graph rule type for Logic App callouts on approval
+                    // (CustomExtension_PreApproval/PostApproval). This tool does not
+                    // edit custom extensions, so the rule is intentionally ignored
+                    // and left untouched by the PATCH payload.
+                    break;
+                default:
+                    // Surfaces schema changes instead of silently showing defaults.
+                    _log.Log(LogLevel.DEBUG, LogCategory.SETTINGS,
+                        $"Unhandled policy rule type '{ruleType}' (id '{ruleId}') for '{policy.RoleDisplayName}'.");
+                    break;
             }
         }
+
+        var s = policy.CurrentSettings;
+        _log.Log(LogLevel.DEBUG, LogCategory.SETTINGS,
+            $"Parsed policy for '{policy.RoleDisplayName}': maxDuration={s.ActivationMaxDurationHours}h, "
+            + $"mfaOnActivation={s.RequireMfaOnActivation}, authContext={s.RequireAuthContextOnActivation}, "
+            + $"justification={s.RequireJustificationOnActivation}, ticket={s.RequireTicketOnActivation}, "
+            + $"approval={s.RequireApprovalToActivate} ({s.Approvers.Count} approver(s)), "
+            + $"permanentEligible={s.AllowPermanentEligibleAssignment}, expireEligible={s.ExpireEligibleAfterDays?.ToString() ?? "none"}d, "
+            + $"permanentActive={s.AllowPermanentActiveAssignment}, expireActive={s.ExpireActiveAfterDays?.ToString() ?? "none"}d, "
+            + $"mfaOnActiveAssignment={s.RequireMfaOnActiveAssignment}, justificationOnActiveAssignment={s.RequireJustificationOnActiveAssignment}");
     }
+
+    // Graph rule IDs follow the pattern <Category>_<Caller>_<Scope>, for example
+    // Enablement_EndUser_Assignment or Expiration_Admin_Eligibility. Matching on
+    // substrings such as "Assignment" is ambiguous because it appears in both the
+    // activation rules (EndUser) and the active-assignment rules (Admin), so the
+    // parsers below compare the full rule ID documented in the PIM rules mapping.
+    // See https://learn.microsoft.com/graph/identity-governance-pim-rules-overview
 
     private void ParseExpirationRule(JsonNode rule, string ruleId, PimRolePolicy policy)
     {
         var maxDuration = rule["maximumDuration"]?.GetValue<string>();
-        var isPermanent = rule["isExpirationRequired"]?.GetValue<bool>() ?? false;
+        var isExpirationRequired = rule["isExpirationRequired"]?.GetValue<bool>() ?? false;
 
-        if (ruleId.Contains("Activation", StringComparison.OrdinalIgnoreCase) && maxDuration != null)
+        switch (ruleId)
         {
-            // Parse ISO 8601 duration like "PT8H"
-            if (maxDuration.StartsWith("PT") && maxDuration.EndsWith("H"))
-            {
-                if (int.TryParse(maxDuration[2..^1], out var hours))
-                    policy.CurrentSettings.ActivationMaxDurationHours = hours;
-            }
-        }
-        else if (ruleId.Contains("Eligibility", StringComparison.OrdinalIgnoreCase))
-        {
-            policy.CurrentSettings.AllowPermanentEligibleAssignment = !isPermanent;
-            if (maxDuration != null)
-            {
-                var days = ParseDurationDays(maxDuration);
-                if (days.HasValue)
-                    policy.CurrentSettings.ExpireEligibleAfterDays = days;
-            }
-        }
-        else if (ruleId.Contains("Assignment", StringComparison.OrdinalIgnoreCase))
-        {
-            policy.CurrentSettings.AllowPermanentActiveAssignment = !isPermanent;
-            if (maxDuration != null)
-            {
-                var days = ParseDurationDays(maxDuration);
-                if (days.HasValue)
-                    policy.CurrentSettings.ExpireActiveAfterDays = days;
-            }
+            // Activation maximum duration (hours).
+            case "Expiration_EndUser_Assignment":
+                var hours = ParseDurationHours(maxDuration);
+                if (hours.HasValue)
+                    policy.CurrentSettings.ActivationMaxDurationHours = hours.Value;
+                break;
+
+            // Allow permanent eligible assignment / Expire eligible assignments after.
+            case "Expiration_Admin_Eligibility":
+                policy.CurrentSettings.AllowPermanentEligibleAssignment = !isExpirationRequired;
+                policy.CurrentSettings.ExpireEligibleAfterDays = ParseDurationDays(maxDuration);
+                break;
+
+            // Allow permanent active assignment / Expire active assignments after.
+            case "Expiration_Admin_Assignment":
+                policy.CurrentSettings.AllowPermanentActiveAssignment = !isExpirationRequired;
+                policy.CurrentSettings.ExpireActiveAfterDays = ParseDurationDays(maxDuration);
+                break;
         }
     }
 
     private void ParseEnablementRule(JsonNode rule, string ruleId, PimRolePolicy policy)
     {
-        var enabledRules = rule["enabledRules"]?.AsArray();
-        if (enabledRules == null) return;
+        // An empty enabledRules collection is meaningful: it means "None" is
+        // selected. Treat a missing collection the same way rather than leaving
+        // the previous values untouched.
+        var rulesList = rule["enabledRules"]?.AsArray()?
+            .Select(r => r?.GetValue<string>() ?? string.Empty)
+            .ToList() ?? new List<string>();
 
-        var rulesList = enabledRules.Select(r => r?.GetValue<string>() ?? string.Empty).ToList();
+        switch (ruleId)
+        {
+            // On activation, require: None / Azure MFA / justification / ticketing.
+            case "Enablement_EndUser_Assignment":
+                policy.CurrentSettings.RequireMfaOnActivation = rulesList.Contains("MultiFactorAuthentication");
+                policy.CurrentSettings.RequireJustificationOnActivation = rulesList.Contains("Justification");
+                policy.CurrentSettings.RequireTicketOnActivation = rulesList.Contains("Ticketing");
+                break;
 
-        if (ruleId.Contains("Activation", StringComparison.OrdinalIgnoreCase))
-        {
-            policy.CurrentSettings.RequireMfaOnActivation = rulesList.Contains("MultiFactorAuthentication");
-            policy.CurrentSettings.RequireJustificationOnActivation = rulesList.Contains("Justification");
-            policy.CurrentSettings.RequireTicketOnActivation = rulesList.Contains("Ticketing");
-        }
-        else if (ruleId.Contains("Assignment", StringComparison.OrdinalIgnoreCase))
-        {
-            policy.CurrentSettings.RequireMfaOnActiveAssignment = rulesList.Contains("MultiFactorAuthentication");
-            policy.CurrentSettings.RequireJustificationOnActiveAssignment = rulesList.Contains("Justification");
+            // Require MFA / justification on active assignment.
+            case "Enablement_Admin_Assignment":
+                policy.CurrentSettings.RequireMfaOnActiveAssignment = rulesList.Contains("MultiFactorAuthentication");
+                policy.CurrentSettings.RequireJustificationOnActiveAssignment = rulesList.Contains("Justification");
+                break;
         }
     }
 
-    private void ParseApprovalRule(JsonNode rule, PimRolePolicy policy)
+    private void ParseApprovalRule(JsonNode rule, string ruleId, PimRolePolicy policy)
     {
+        // "Require approval to activate" is the end-user rule. A policy can also
+        // carry Approval_Admin_Assignment / Approval_Admin_Eligibility, and
+        // without this guard whichever rule is parsed last would win.
+        if (ruleId != "Approval_EndUser_Assignment")
+            return;
+
         var isApprovalRequired = rule["setting"]?["isApprovalRequired"]?.GetValue<bool>() ?? false;
         policy.CurrentSettings.RequireApprovalToActivate = isApprovalRequired;
 
@@ -829,42 +1014,64 @@ public sealed class GraphPimService
             .Where(r => !string.IsNullOrEmpty(r))
             .ToArray() ?? Array.Empty<string>();
 
-        var criticalOnly = rule["isDefaultRecipientsEnabled"]?.GetValue<bool>() ?? true;
-
-        // Map notification rules based on ID patterns
         var notification = new NotificationSettings
         {
             AdditionalRecipients = recipients,
-            IsDefaultRecipientsEnabled = criticalOnly,
-            CriticalEmailsOnly = !(rule["isDefaultRecipientsEnabled"]?.GetValue<bool>() ?? true)
+            // Controls whether the built-in recipient receives the mail.
+            IsDefaultRecipientsEnabled = rule["isDefaultRecipientsEnabled"]?.GetValue<bool>() ?? true,
+            // Separate property on the Graph rule; "Critical" means critical only.
+            CriticalEmailsOnly = string.Equals(
+                rule["notificationLevel"]?.GetValue<string>(),
+                "Critical",
+                StringComparison.OrdinalIgnoreCase)
         };
 
-        if (ruleId.Contains("Eligibility", StringComparison.OrdinalIgnoreCase))
+        _log.Log(LogLevel.DEBUG, LogCategory.SETTINGS,
+            $"Notification rule '{ruleId}': defaultRecipients={notification.IsDefaultRecipientsEnabled}, "
+            + $"criticalOnly={notification.CriticalEmailsOnly}, "
+            + $"additional=[{string.Join("; ", notification.AdditionalRecipients)}]");
+
+        // Notification rule IDs are Notification_<Recipient>_<Caller>_<Scope>,
+        // for example Notification_Admin_Admin_Eligibility. The caller segment
+        // distinguishes the three blocks shown in the portal.
+        switch (ruleId)
         {
-            if (ruleId.Contains("Admin", StringComparison.OrdinalIgnoreCase))
+            // Members assigned as eligible.
+            case "Notification_Admin_Admin_Eligibility":
                 policy.CurrentSettings.EligibleAssignmentAdminNotification = notification;
-            else if (ruleId.Contains("Requestor", StringComparison.OrdinalIgnoreCase))
+                break;
+            case "Notification_Requestor_Admin_Eligibility":
                 policy.CurrentSettings.EligibleAssignmentAssigneeNotification = notification;
-            else if (ruleId.Contains("Approver", StringComparison.OrdinalIgnoreCase))
+                break;
+            case "Notification_Approver_Admin_Eligibility":
                 policy.CurrentSettings.EligibleAssignmentApproverNotification = notification;
-        }
-        else if (ruleId.Contains("Assignment", StringComparison.OrdinalIgnoreCase))
-        {
-            if (ruleId.Contains("Admin", StringComparison.OrdinalIgnoreCase))
+                break;
+
+            // Members assigned as active.
+            case "Notification_Admin_Admin_Assignment":
                 policy.CurrentSettings.ActiveAssignmentAdminNotification = notification;
-            else if (ruleId.Contains("Requestor", StringComparison.OrdinalIgnoreCase))
+                break;
+            case "Notification_Requestor_Admin_Assignment":
                 policy.CurrentSettings.ActiveAssignmentAssigneeNotification = notification;
-            else if (ruleId.Contains("Approver", StringComparison.OrdinalIgnoreCase))
+                break;
+            case "Notification_Approver_Admin_Assignment":
                 policy.CurrentSettings.ActiveAssignmentApproverNotification = notification;
-        }
-        else if (ruleId.Contains("Activation", StringComparison.OrdinalIgnoreCase))
-        {
-            if (ruleId.Contains("Admin", StringComparison.OrdinalIgnoreCase))
+                break;
+
+            // Eligible members activating the role.
+            case "Notification_Admin_EndUser_Assignment":
                 policy.CurrentSettings.ActivationAdminNotification = notification;
-            else if (ruleId.Contains("Requestor", StringComparison.OrdinalIgnoreCase))
+                break;
+            case "Notification_Requestor_EndUser_Assignment":
                 policy.CurrentSettings.ActivationAssigneeNotification = notification;
-            else if (ruleId.Contains("Approver", StringComparison.OrdinalIgnoreCase))
+                break;
+            case "Notification_Approver_EndUser_Assignment":
                 policy.CurrentSettings.ActivationApproverNotification = notification;
+                break;
+            default:
+                _log.Log(LogLevel.DEBUG, LogCategory.SETTINGS,
+                    $"Unrecognized notification rule id '{ruleId}'; its values are not shown in the UI.");
+                break;
         }
     }
 
@@ -894,7 +1101,7 @@ public sealed class GraphPimService
                 });
             }
 
-            _log.Log(LogLevel.SUCCESS, LogCategory.API, $"Retrieved {contexts.Count} authentication contexts.");
+            _log.Log(LogLevel.DEBUG, LogCategory.API, $"Retrieved {contexts.Count} authentication contexts.");
         }
         catch (Exception ex)
         {
@@ -904,26 +1111,82 @@ public sealed class GraphPimService
         return contexts;
     }
 
-    private static int? ParseDurationDays(string duration)
+    /// <summary>
+    /// Parses the hour component of an ISO 8601 duration such as "PT8H".
+    /// </summary>
+    private static int? ParseDurationHours(string? duration)
     {
-        // Parse ISO 8601 durations like "P365D", "P30D"
-        if (duration.StartsWith("P") && duration.EndsWith("D"))
+        if (string.IsNullOrWhiteSpace(duration)) return null;
+
+        try
         {
-            if (int.TryParse(duration[1..^1], out var days))
-                return days;
+            var span = System.Xml.XmlConvert.ToTimeSpan(duration);
+            var hours = (int)Math.Round(span.TotalHours);
+            return hours > 0 ? hours : null;
         }
-        return null;
+        catch (FormatException)
+        {
+            return null;
+        }
     }
 
-    private List<PolicyRuleUpdate> BuildPolicyRules(PimRolePolicy policy, BulkEditSettings settings)
+    /// <summary>
+    /// Parses an ISO 8601 duration into whole days. Graph returns year and month
+    /// based durations such as "P1Y" for the "1 year(s)" option in the portal, so
+    /// a plain "P365D" check would silently drop the value.
+    /// </summary>
+    private static int? ParseDurationDays(string? duration)
+    {
+        if (string.IsNullOrWhiteSpace(duration)) return null;
+
+        // XmlConvert rejects year and month designators because their length is
+        // not fixed, so normalize those to days first.
+        var match = System.Text.RegularExpressions.Regex.Match(
+            duration, @"^P(?:(\d+)Y)?(?:(\d+)M)?(?:(\d+)D)?$");
+
+        if (match.Success && match.Groups.Cast<System.Text.RegularExpressions.Group>().Skip(1).Any(g => g.Success))
+        {
+            var years = match.Groups[1].Success ? int.Parse(match.Groups[1].Value) : 0;
+            var months = match.Groups[2].Success ? int.Parse(match.Groups[2].Value) : 0;
+            var days = match.Groups[3].Success ? int.Parse(match.Groups[3].Value) : 0;
+
+            // PIM treats a year as 365 days and a month as 30 days.
+            var total = (years * 365) + (months * 30) + days;
+            return total > 0 ? total : null;
+        }
+
+        try
+        {
+            var span = System.Xml.XmlConvert.ToTimeSpan(duration);
+            var totalDays = (int)Math.Round(span.TotalDays);
+            return totalDays > 0 ? totalDays : null;
+        }
+        catch (FormatException)
+        {
+            return null;
+        }
+    }
+
+    private List<PolicyRuleUpdate> BuildPolicyRules(PimRolePolicy policy, BulkEditSettings settings, List<string> changes)
     {
         var rules = new List<PolicyRuleUpdate>();
+        var current = policy.CurrentSettings;
+
+        // Records a setting only when the new value actually differs, so the
+        // log lists exactly what was changed and nothing else.
+        void Track(string settingName, string? oldValue, string? newValue)
+        {
+            var before = string.IsNullOrEmpty(oldValue) ? "(none)" : oldValue;
+            var after = string.IsNullOrEmpty(newValue) ? "(none)" : newValue;
+            if (string.Equals(before, after, StringComparison.Ordinal)) return;
+            changes.Add($"{settingName}: '{before}' -> '{after}'");
+        }
 
         // Activation expiration rule
         {
-            _log.LogSettingChange(policy.RoleDisplayName, "ActivationMaxDurationHours",
-                policy.CurrentSettings.ActivationMaxDurationHours.ToString(),
-                ((int)settings.ActivationMaxDurationHours).ToString());
+            Track("Activation max duration (hours)",
+                current.ActivationMaxDurationHours.ToString(CultureInfo.InvariantCulture),
+                ((int)settings.ActivationMaxDurationHours).ToString(CultureInfo.InvariantCulture));
 
             rules.Add(new PolicyRuleUpdate
             {
@@ -938,8 +1201,8 @@ public sealed class GraphPimService
             });
         }
 
-        // Activation enablement rule (always applied — individual items skip if Unchanged)
-        var activationEnabledRules = BuildEnablementRules(policy, settings, isActivation: true);
+        // Activation enablement rule (always applied - individual items skip if Unchanged)
+        var activationEnabledRules = BuildEnablementRules(policy, settings, isActivation: true, changes);
         rules.Add(new PolicyRuleUpdate
         {
             RuleId = "Enablement_EndUser_Assignment",
@@ -951,8 +1214,8 @@ public sealed class GraphPimService
             }
         });
 
-        // Assignment enablement rule (always applied — individual items skip if Unchanged)
-        var assignmentEnabledRules = BuildEnablementRules(policy, settings, isActivation: false);
+        // Assignment enablement rule (always applied - individual items skip if Unchanged)
+        var assignmentEnabledRules = BuildEnablementRules(policy, settings, isActivation: false, changes);
         rules.Add(new PolicyRuleUpdate
         {
             RuleId = "Enablement_Admin_Assignment",
@@ -973,16 +1236,16 @@ public sealed class GraphPimService
                 ["isExpirationRequired"] = !allowPermanent
             };
 
-            _log.LogSettingChange(policy.RoleDisplayName, "AllowPermanentEligibleAssignment",
-                policy.CurrentSettings.AllowPermanentEligibleAssignment.ToString(),
+            Track("Allow permanent eligible assignment",
+                current.AllowPermanentEligibleAssignment.ToString(),
                 allowPermanent.ToString());
 
             if (!allowPermanent)
             {
                 props["maximumDuration"] = $"P{(int)settings.ExpireEligibleAfterDays}D";
-                _log.LogSettingChange(policy.RoleDisplayName, "ExpireEligibleAfterDays",
-                    policy.CurrentSettings.ExpireEligibleAfterDays?.ToString() ?? "N/A",
-                    ((int)settings.ExpireEligibleAfterDays).ToString());
+                Track("Expire eligible assignment after (days)",
+                    current.ExpireEligibleAfterDays?.ToString(CultureInfo.InvariantCulture),
+                    ((int)settings.ExpireEligibleAfterDays).ToString(CultureInfo.InvariantCulture));
             }
 
             rules.Add(new PolicyRuleUpdate
@@ -1002,16 +1265,16 @@ public sealed class GraphPimService
                 ["isExpirationRequired"] = !allowPermanent
             };
 
-            _log.LogSettingChange(policy.RoleDisplayName, "AllowPermanentActiveAssignment",
-                policy.CurrentSettings.AllowPermanentActiveAssignment.ToString(),
+            Track("Allow permanent active assignment",
+                current.AllowPermanentActiveAssignment.ToString(),
                 allowPermanent.ToString());
 
             if (!allowPermanent)
             {
                 props["maximumDuration"] = $"P{(int)settings.ExpireActiveAfterDays}D";
-                _log.LogSettingChange(policy.RoleDisplayName, "ExpireActiveAfterDays",
-                    policy.CurrentSettings.ExpireActiveAfterDays?.ToString() ?? "N/A",
-                    ((int)settings.ExpireActiveAfterDays).ToString());
+                Track("Expire active assignment after (days)",
+                    current.ExpireActiveAfterDays?.ToString(CultureInfo.InvariantCulture),
+                    ((int)settings.ExpireActiveAfterDays).ToString(CultureInfo.InvariantCulture));
             }
 
             rules.Add(new PolicyRuleUpdate
@@ -1025,9 +1288,13 @@ public sealed class GraphPimService
         // Approval rule
         {
             var approvalRequired = settings.RequireApprovalToActivate;
-            _log.LogSettingChange(policy.RoleDisplayName, "RequireApprovalToActivate",
-                policy.CurrentSettings.RequireApprovalToActivate.ToString(),
+            Track("Require approval to activate",
+                current.RequireApprovalToActivate.ToString(),
                 approvalRequired.ToString());
+
+            Track("Approvers",
+                string.Join(", ", current.Approvers.Select(a => a.DisplayName)),
+                approvalRequired ? DescribeApprovers(settings.ApproversRaw) : string.Empty);
 
             var approvalProps = new Dictionary<string, object>
             {
@@ -1055,9 +1322,16 @@ public sealed class GraphPimService
 
         // Authentication context rule (always applied)
         {
-            _log.LogSettingChange(policy.RoleDisplayName, "RequireAuthContextOnActivation",
-                policy.CurrentSettings.RequireAuthContextOnActivation.ToString(),
+            Track("Require authentication context on activation",
+                current.RequireAuthContextOnActivation.ToString(),
                 settings.RequireAuthContextOnActivation.ToString());
+
+            if (settings.RequireAuthContextOnActivation)
+            {
+                Track("Authentication context claim",
+                    current.AuthContextClaimValue,
+                    settings.AuthContextClaimValue);
+            }
 
             var authContextProps = new Dictionary<string, object>
             {
@@ -1075,19 +1349,37 @@ public sealed class GraphPimService
         }
 
         // Notification rules
-        BuildNotificationRule(rules, "Notification_Admin_Admin_Eligibility", "Admin", "Eligibility", settings.EligibleAssignmentAdmin);
-        BuildNotificationRule(rules, "Notification_Requestor_Admin_Eligibility", "Requestor", "Eligibility", settings.EligibleAssignmentAssignee);
-        BuildNotificationRule(rules, "Notification_Approver_Admin_Eligibility", "Approver", "Eligibility", settings.EligibleAssignmentApprover);
+        BuildNotificationRule(rules, "Notification_Admin_Admin_Eligibility", "Admin", "Eligibility", settings.EligibleAssignmentAdmin,
+            "Eligible assignment - admin notification", current.EligibleAssignmentAdminNotification, changes);
+        BuildNotificationRule(rules, "Notification_Requestor_Admin_Eligibility", "Requestor", "Eligibility", settings.EligibleAssignmentAssignee,
+            "Eligible assignment - assignee notification", current.EligibleAssignmentAssigneeNotification, changes);
+        BuildNotificationRule(rules, "Notification_Approver_Admin_Eligibility", "Approver", "Eligibility", settings.EligibleAssignmentApprover,
+            "Eligible assignment - approver notification", current.EligibleAssignmentApproverNotification, changes);
 
-        BuildNotificationRule(rules, "Notification_Admin_Admin_Assignment", "Admin", "Assignment", settings.ActiveAssignmentAdmin);
-        BuildNotificationRule(rules, "Notification_Requestor_Admin_Assignment", "Requestor", "Assignment", settings.ActiveAssignmentAssignee);
-        BuildNotificationRule(rules, "Notification_Approver_Admin_Assignment", "Approver", "Assignment", settings.ActiveAssignmentApprover);
+        BuildNotificationRule(rules, "Notification_Admin_Admin_Assignment", "Admin", "Assignment", settings.ActiveAssignmentAdmin,
+            "Active assignment - admin notification", current.ActiveAssignmentAdminNotification, changes);
+        BuildNotificationRule(rules, "Notification_Requestor_Admin_Assignment", "Requestor", "Assignment", settings.ActiveAssignmentAssignee,
+            "Active assignment - assignee notification", current.ActiveAssignmentAssigneeNotification, changes);
+        BuildNotificationRule(rules, "Notification_Approver_Admin_Assignment", "Approver", "Assignment", settings.ActiveAssignmentApprover,
+            "Active assignment - approver notification", current.ActiveAssignmentApproverNotification, changes);
 
-        BuildNotificationRule(rules, "Notification_Admin_EndUser_Assignment", "Admin", "Assignment", settings.ActivationAdmin, isActivation: true);
-        BuildNotificationRule(rules, "Notification_Requestor_EndUser_Assignment", "Requestor", "Assignment", settings.ActivationRequestor, isActivation: true);
-        BuildNotificationRule(rules, "Notification_Approver_EndUser_Assignment", "Approver", "Assignment", settings.ActivationApprover, isActivation: true);
+        BuildNotificationRule(rules, "Notification_Admin_EndUser_Assignment", "Admin", "Assignment", settings.ActivationAdmin,
+            "Activation - admin notification", current.ActivationAdminNotification, changes, isActivation: true);
+        BuildNotificationRule(rules, "Notification_Requestor_EndUser_Assignment", "Requestor", "Assignment", settings.ActivationRequestor,
+            "Activation - requestor notification", current.ActivationAssigneeNotification, changes, isActivation: true);
+        BuildNotificationRule(rules, "Notification_Approver_EndUser_Assignment", "Approver", "Assignment", settings.ActivationApprover,
+            "Activation - approver notification", current.ActivationApproverNotification, changes, isActivation: true);
 
         return rules;
+    }
+
+    /// <summary>Renders the approver selection as readable text for the change log.</summary>
+    private static string DescribeApprovers(string approversRaw)
+    {
+        if (string.IsNullOrWhiteSpace(approversRaw)) return string.Empty;
+
+        var entries = approversRaw.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return $"{entries.Length} approver(s)";
     }
 
     private static Dictionary<string, object> BuildTarget(string caller, string level)
@@ -1103,9 +1395,16 @@ public sealed class GraphPimService
         };
     }
 
-    private List<string> BuildEnablementRules(PimRolePolicy policy, BulkEditSettings settings, bool isActivation)
+    private List<string> BuildEnablementRules(PimRolePolicy policy, BulkEditSettings settings, bool isActivation, List<string> changes)
     {
         var enabledRules = new List<string>();
+        var current = policy.CurrentSettings;
+
+        void Track(string settingName, bool oldValue, bool newValue)
+        {
+            if (oldValue == newValue) return;
+            changes.Add($"{settingName}: '{oldValue}' -> '{newValue}'");
+        }
 
         if (isActivation)
         {
@@ -1118,15 +1417,12 @@ public sealed class GraphPimService
             if (settings.RequireTicketOnActivation)
                 enabledRules.Add("Ticketing");
 
-            _log.LogSettingChange(policy.RoleDisplayName, "RequireMfaOnActivation",
-                policy.CurrentSettings.RequireMfaOnActivation.ToString(),
-                settings.RequireMfaOnActivation.ToString());
-            _log.LogSettingChange(policy.RoleDisplayName, "RequireJustificationOnActivation",
-                policy.CurrentSettings.RequireJustificationOnActivation.ToString(),
-                settings.RequireJustificationOnActivation.ToString());
-            _log.LogSettingChange(policy.RoleDisplayName, "RequireTicketOnActivation",
-                policy.CurrentSettings.RequireTicketOnActivation.ToString(),
-                settings.RequireTicketOnActivation.ToString());
+            Track("Require MFA on activation",
+                current.RequireMfaOnActivation, settings.RequireMfaOnActivation);
+            Track("Require justification on activation",
+                current.RequireJustificationOnActivation, settings.RequireJustificationOnActivation);
+            Track("Require ticket on activation",
+                current.RequireTicketOnActivation, settings.RequireTicketOnActivation);
         }
         else
         {
@@ -1136,12 +1432,10 @@ public sealed class GraphPimService
             if (settings.RequireJustificationOnActiveAssignment)
                 enabledRules.Add("Justification");
 
-            _log.LogSettingChange(policy.RoleDisplayName, "RequireMfaOnActiveAssignment",
-                policy.CurrentSettings.RequireMfaOnActiveAssignment.ToString(),
-                settings.RequireMfaOnActiveAssignment.ToString());
-            _log.LogSettingChange(policy.RoleDisplayName, "RequireJustificationOnActiveAssignment",
-                policy.CurrentSettings.RequireJustificationOnActiveAssignment.ToString(),
-                settings.RequireJustificationOnActiveAssignment.ToString());
+            Track("Require MFA on active assignment",
+                current.RequireMfaOnActiveAssignment, settings.RequireMfaOnActiveAssignment);
+            Track("Require justification on active assignment",
+                current.RequireJustificationOnActiveAssignment, settings.RequireJustificationOnActiveAssignment);
         }
 
         return enabledRules;
@@ -1195,13 +1489,32 @@ public sealed class GraphPimService
         };
     }
 
-    private static void BuildNotificationRule(List<PolicyRuleUpdate> rules, string ruleId, string recipientType, string level, NotificationRowSettings row, bool isActivation = false)
+    private static void BuildNotificationRule(List<PolicyRuleUpdate> rules, string ruleId, string recipientType, string level,
+        NotificationRowSettings row, string displayName, NotificationSettings currentRow, List<string> changes, bool isActivation = false)
     {
         var additionalRecipients = string.IsNullOrWhiteSpace(row.AdditionalRecipients)
             ? Array.Empty<string>()
             : row.AdditionalRecipients.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
         var caller = ruleId.Contains("EndUser") ? "EndUser" : "Admin";
+
+        if (currentRow.IsDefaultRecipientsEnabled != row.DefaultRecipients)
+        {
+            changes.Add($"{displayName} - default recipients: '{currentRow.IsDefaultRecipientsEnabled}' -> '{row.DefaultRecipients}'");
+        }
+
+        if (currentRow.CriticalEmailsOnly != row.CriticalOnly)
+        {
+            changes.Add($"{displayName} - critical emails only: '{currentRow.CriticalEmailsOnly}' -> '{row.CriticalOnly}'");
+        }
+
+        var before = string.Join("; ", currentRow.AdditionalRecipients);
+        var after = string.Join("; ", additionalRecipients);
+        if (!string.Equals(before, after, StringComparison.OrdinalIgnoreCase))
+        {
+            changes.Add($"{displayName} - additional recipients: " +
+                $"'{(before.Length == 0 ? "(none)" : before)}' -> '{(after.Length == 0 ? "(none)" : after)}'");
+        }
 
         var props = new Dictionary<string, object>
         {

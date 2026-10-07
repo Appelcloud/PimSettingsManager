@@ -39,7 +39,7 @@
                             <TextBlock Text="We'd love your feedback" Style="{StaticResource SubtitleTextBlockStyle}" HorizontalAlignment="Center"/>
                             <TextBlock TextWrapping="Wrap" TextAlignment="Center" LineHeight="22" FontSize="13"
                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}">
-                                Found a bug or have an idea to improve PIMSettings Manager? Let us know — your feedback helps shape the tool.
+                                Found a bug or have an idea to improve PIMSettings Manager? Let us know - your feedback helps shape the tool.
                             </TextBlock>
                         </StackPanel>
 

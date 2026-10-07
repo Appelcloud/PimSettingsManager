@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.IO;
 using System.Reflection;
 using System.Runtime.CompilerServices;
@@ -31,10 +32,28 @@ public sealed class LogService
 
     private const int LogRetentionDays = 30;
 
-    // Entries below this level are not written to the file. DEBUG entries
-    // (raw API traffic, stack traces) are developer noise; the user-facing
-    // log contains INFO, WARN, ERROR, SUCCESS and configuration changes.
+    // RFC 3339 / ISO 8601 profile: date-time with 'T' separator, millisecond
+    // precision and a numeric UTC offset. "zzz" renders as +02:00; RFC 3339
+    // also allows "Z", which .NET emits as +00:00 - both are valid offsets.
+    private const string Rfc3339Format = "yyyy-MM-dd\\THH:mm:ss.fffzzz";
+
+    // Basic ISO 8601 form for file names, since ':' is not allowed in a path.
+    private const string FileNameTimestampFormat = "yyyyMMdd\\THHmmss\\Z";
+
+    // DEBUG entries (raw API traffic, stack traces) are never written to file.
     private const LogLevel MinimumLevel = LogLevel.INFO;
+
+    /// <summary>
+    /// The log records sign-in events, applied role and group settings, and
+    /// failures. Entries from other areas are discarded even when a caller
+    /// logs them at INFO or SUCCESS.
+    /// </summary>
+    private static bool IsInScope(LogLevel level, LogCategory category)
+    {
+        if (level is LogLevel.ERROR or LogLevel.WARN) return true;
+
+        return category is LogCategory.AUTH or LogCategory.PERMISSION or LogCategory.SETTINGS;
+    }
 
     private readonly string _logFilePath;
     private readonly object _lock = new();
@@ -50,7 +69,7 @@ public sealed class LogService
         Directory.CreateDirectory(logDir);
         CleanupOldLogs(logDir);
 
-        var timestamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
+        var timestamp = DateTimeOffset.UtcNow.ToString(FileNameTimestampFormat, CultureInfo.InvariantCulture);
         _logFilePath = Path.Combine(logDir, $"PIMSettingsManager_{timestamp}.log");
 
         WriteSessionHeader();
@@ -59,11 +78,15 @@ public sealed class LogService
     private void WriteSessionHeader()
     {
         var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "unknown";
-        WriteRaw("═══════════════ PIMSettings Manager — Session Log ═══════════════");
-        WriteRaw($"Started:  {DateTime.Now:yyyy-MM-dd HH:mm:ss} (local time)");
-        WriteRaw($"Version:  {version}");
-        WriteRaw("──────────────────────────────────────────────────────────────────");
+        WriteRaw("=============== PIMSettings Manager - Session Log ===============");
+        WriteRaw($"Started:   {Timestamp()}");
+        WriteRaw($"Version:   {version}");
+        WriteRaw("------------------------------------------------------------------");
     }
+
+    /// <summary>Current local time as an RFC 3339 / ISO 8601 date-time with UTC offset.</summary>
+    private static string Timestamp()
+        => DateTimeOffset.Now.ToString(Rfc3339Format, CultureInfo.InvariantCulture);
 
     private static void CleanupOldLogs(string logDir)
     {
@@ -104,8 +127,8 @@ public sealed class LogService
     public void LogSeparator(string? label = null)
     {
         var line = label != null
-            ? $"──── {label} ────"
-            : "".PadRight(60, '─');
+            ? $"---- {label} ----"
+            : "".PadRight(60, '-');
         WriteRaw(line);
     }
 
@@ -113,23 +136,20 @@ public sealed class LogService
         [CallerMemberName] string caller = "")
     {
         if (level < MinimumLevel) return;
+        if (!IsInScope(level, category)) return;
 
-        var timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
-        WriteRaw($"[{timestamp}] [{level,-7}] {message}");
+        WriteRaw($"[{Timestamp()}] [{level,-7}] [{category,-10}] {message}");
     }
 
-    /// <summary>
-    /// API request details are developer noise — logged at DEBUG, which is
-    /// filtered out of the user-facing log file.
-    /// </summary>
+    /// <summary>Records the request for diagnostics only.</summary>
     public void LogApiCall(string method, string url, string? requestBody = null)
     {
         Log(LogLevel.DEBUG, LogCategory.API, $"{method} {GetUrlPath(url)}");
     }
 
     /// <summary>
-    /// Successful responses stay hidden (DEBUG); failures are logged in a
-    /// readable form with the endpoint path only — no query strings.
+    /// Reports failed Graph requests with the endpoint path only, never the
+    /// query string.
     /// </summary>
     public void LogApiResponse(string url, int statusCode, string? responseBody = null)
     {
@@ -147,25 +167,6 @@ public sealed class LogService
     private static string GetUrlPath(string url)
     {
         return Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri.AbsolutePath : url;
-    }
-
-    /// <summary>
-    /// Records what has been configured. Actual changes are logged prominently;
-    /// values that stay the same are kept out of the user-facing log.
-    /// </summary>
-    public void LogSettingChange(string roleName, string settingName, string? oldValue, string? newValue)
-    {
-        var before = oldValue ?? "N/A";
-        var after = newValue ?? "N/A";
-
-        if (string.Equals(before, after, StringComparison.Ordinal))
-        {
-            Log(LogLevel.DEBUG, LogCategory.SETTINGS, $"{roleName}: {settingName} unchanged ({before})");
-            return;
-        }
-
-        Log(LogLevel.INFO, LogCategory.SETTINGS,
-            $"Configured '{roleName}' — {settingName}: '{before}' → '{after}'");
     }
 
     public void LogError(Exception ex, string context = "")

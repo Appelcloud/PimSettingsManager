@@ -59,6 +59,16 @@ public class PolicySettings
 public class NotificationSettings
 {
     public string[] AdditionalRecipients { get; set; } = [];
+
+    /// <summary>
+    /// Whether the built-in recipients (Admin/Assignee/Approver) receive the mail.
+    /// Maps to <c>isDefaultRecipientsEnabled</c> on the Graph notification rule.
+    /// </summary>
     public bool IsDefaultRecipientsEnabled { get; set; } = true;
+
+    /// <summary>
+    /// True when only critical mails are sent. Maps to <c>notificationLevel</c>
+    /// being <c>Critical</c> rather than <c>All</c>.
+    /// </summary>
     public bool CriticalEmailsOnly { get; set; }
 }
