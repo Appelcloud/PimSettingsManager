@@ -55,7 +55,7 @@ A Windows desktop tool that lets you configure **Microsoft Entra PIM (Privileged
 
 1. Download **`tool.zip`** from the [Releases](https://github.com/Appelcloud/PimSettingsManager/releases) page.
 2. **Extract** `tool.zip` to a folder on your PC.
-3. Run **`PIMSettings Manager.exe`** from the extracted folder.
+3. Open the extracted `tool` folder and run **`PIMSettings Manager.exe`**.
 
 ## How to use it
 
