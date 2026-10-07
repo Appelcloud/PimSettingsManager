@@ -1,432 +1,305 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PIMSettings Manager</title>
-    <link rel="icon" type="image/x-icon" href="favicon.ico">
-    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
-    <style>
-        :root {
-            --primary: #0078d4;
-            --primary-dark: #005a9e;
-            --accent: #ffb900;
-            --bg: #f9fafb;
-            --card-bg: #ffffff;
-            --text: #1a1a1a;
-            --text-secondary: #5f6368;
-            --border: #e5e7eb;
-        }
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PIMSettings Manager · AppelCloud</title>
+  <meta name="description" content="Bulk edit Microsoft Entra PIM settings for Entra ID roles and PIM-enabled groups.">
+  <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+  <style>
+    :root {
+      font-size: 16px;
+      font-family: "Segoe UI", "Helvetica Neue", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      --surface: #ffffff;
+      --page: #f4f6fb;
+      --border: #dde2ea;
+      --text-primary: #1f2430;
+      --text-muted: #596173;
+      --pill-blue: #2185d0;
+      --pill-green: #2ea043;
+      --ps-blue: #012456;
+      --shadow-soft: 0 18px 45px rgba(15, 29, 71, 0.15);
+      color: var(--text-primary);
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--page);
+      background-image: radial-gradient(circle at top, rgba(33, 133, 208, 0.12), transparent 50%);
+      display: flex;
+      justify-content: center;
+      padding: 48px 16px 64px;
+    }
+    .page-shell { width: min(1120px, 100%); display: flex; flex-direction: column; gap: 24px; }
+    .card {
+      background: var(--surface);
+      border-radius: 26px;
+      padding: 32px;
+      box-shadow: var(--shadow-soft);
+      border: 1px solid rgba(255, 255, 255, 0.4);
+    }
+    .card > h2 { margin: 0 0 20px; font-size: 1.35rem; font-weight: 600; display: flex; align-items: center; gap: 10px; }
 
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+    /* Hero */
+    .hero { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 16px; padding: 40px 32px 36px; }
+    .logo-mark { display: flex; align-items: center; gap: 16px; text-decoration: none; }
+    .logo-icon { width: 40px; height: 40px; }
+    .wordmark { font-size: 1.3rem; font-weight: 600; color: #0c0c0c; }
+    .logo-cloud { width: 34px; height: 20px; fill: none; stroke: #0c0c0c; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .lockup { height: 72px; margin-top: 8px; }
+    .hero h1 { margin: 0; font-size: clamp(1.4rem, 2.5vw, 1.9rem); font-weight: 600; }
+    .hero p { margin: 0 auto; color: var(--text-muted); max-width: 680px; }
+    .actions { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; margin-top: 4px; }
+    .btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 10px 20px; border-radius: 999px; font-weight: 600; text-decoration: none;
+      transition: transform 160ms ease, box-shadow 160ms ease;
+    }
+    .btn:hover { transform: translateY(-2px); box-shadow: 0 10px 22px rgba(15, 29, 71, 0.18); }
+    .btn-primary { background: var(--pill-blue); color: #fff; }
+    .btn-ghost { background: #fff; color: var(--text-primary); border: 1px solid var(--border); }
+    .btn svg { width: 18px; height: 18px; }
 
-        body {
-            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
-            background: var(--bg);
-            color: var(--text);
-            line-height: 1.6;
-        }
+    /* Showcase thumbnails */
+    .showcase { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; margin-top: 12px; }
+    .thumb {
+      width: 340px; max-width: 100%;
+      text-decoration: none; color: var(--text-muted); font-size: 0.85rem;
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .thumb img {
+      width: 100%; border-radius: 14px; border: 1px solid var(--border);
+      box-shadow: 0 8px 18px rgba(22, 48, 97, 0.1);
+      transition: transform 160ms ease, box-shadow 160ms ease;
+    }
+    .thumb:hover img { transform: translateY(-4px); box-shadow: 0 18px 35px rgba(15, 29, 71, 0.18); }
 
-        .hero {
-            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
-            color: white;
-            padding: 80px 24px;
-            text-align: center;
-        }
+    /* Tiles */
+    .tiles-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; }
+    .tile {
+      background: linear-gradient(145deg, #ffffff, #f8faff);
+      border: 1px solid rgba(221, 226, 234, 0.9);
+      border-radius: 22px; padding: 20px;
+      box-shadow: 0 8px 18px rgba(22, 48, 97, 0.1);
+    }
+    .tile h3 { margin: 8px 0 6px; font-size: 1.05rem; }
+    .tile p { margin: 0; color: var(--text-muted); font-size: 0.95rem; }
+    .pill { display: inline-flex; padding: 2px 8px; border-radius: 999px; font-size: 0.75rem; font-weight: 600; color: #fff; background: var(--pill-blue); }
+    .pill-green { background: var(--pill-green); }
+    .pill-neutral { background: #cbd5f5; color: #1b2a54; }
 
-        .hero h1 {
-            font-size: 2.8rem;
-            font-weight: 700;
-            margin-bottom: 16px;
-            letter-spacing: -0.5px;
-        }
+    /* PowerShell icon */
+    .ps-icon { width: 28px; height: 28px; flex-shrink: 0; }
 
-        .hero p {
-            font-size: 1.2rem;
-            opacity: 0.9;
-            max-width: 650px;
-            margin: 0 auto 32px;
-        }
+    /* Steps */
+    .steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; }
+    .step { display: flex; gap: 14px; align-items: flex-start; background: linear-gradient(145deg, #ffffff, #f8faff); border: 1px solid rgba(221, 226, 234, 0.9); border-radius: 22px; padding: 20px; }
+    .step h3 { margin: 2px 0 6px; font-size: 1.05rem; }
+    .step p { margin: 0; color: var(--text-muted); font-size: 0.95rem; }
+    .step a { color: var(--pill-blue); font-weight: 600; text-decoration: none; }
+    code { font-family: "Cascadia Code", Consolas, monospace; font-size: 0.88em; background: #eef2fa; padding: 1px 6px; border-radius: 6px; color: #1b2a54; }
 
-        .hero-badges {
-            display: flex;
-            gap: 12px;
-            justify-content: center;
-            flex-wrap: wrap;
-        }
+    /* Terminal */
+    .terminal { margin-top: 24px; border-radius: 18px; overflow: hidden; background: var(--ps-blue); box-shadow: 0 8px 18px rgba(22, 48, 97, 0.15); }
+    .terminal-bar { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; background: rgba(255, 255, 255, 0.08); color: #dbe7ff; font-size: 0.85rem; font-weight: 600; }
+    .terminal-bar span { display: flex; align-items: center; gap: 8px; }
+    .terminal-bar .ps-icon { width: 20px; height: 20px; }
+    .copy-btn { background: rgba(255, 255, 255, 0.12); color: #fff; border: 0; border-radius: 999px; padding: 4px 12px; font: inherit; font-size: 0.8rem; cursor: pointer; }
+    .copy-btn:hover { background: rgba(255, 255, 255, 0.22); }
+    .terminal pre { margin: 0; padding: 18px 20px; overflow-x: auto; color: #eef3ff; font-family: "Cascadia Code", Consolas, monospace; font-size: 0.9rem; line-height: 1.6; }
+    .terminal .c { color: #8fb0e0; }
+    .terminal .k { color: #ffd866; }
 
-        .badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            background: rgba(255,255,255,0.15);
-            border: 1px solid rgba(255,255,255,0.3);
-            border-radius: 20px;
-            padding: 6px 14px;
-            font-size: 0.85rem;
-            backdrop-filter: blur(4px);
-        }
+    /* Requirements */
+    .req-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+    .req-grid h3 { margin: 0 0 10px; font-size: 1rem; }
+    .req-grid ul { margin: 0; padding-left: 20px; color: var(--text-muted); line-height: 1.8; }
+    .req-grid a { color: var(--pill-blue); font-weight: 600; text-decoration: none; }
 
-        .container {
-            max-width: 1100px;
-            margin: 0 auto;
-            padding: 0 24px;
-        }
+    .site-footer { text-align: center; color: var(--text-muted); font-size: 0.9rem; margin-top: 8px; }
+    .site-footer a { color: var(--pill-blue); text-decoration: none; font-weight: 600; }
+    .site-footer a:hover, .step a:hover, .req-grid a:hover { text-decoration: underline; }
 
-        .features {
-            padding: 80px 24px;
-        }
-
-        .features h2 {
-            text-align: center;
-            font-size: 2rem;
-            margin-bottom: 48px;
-            color: var(--text);
-        }
-
-        .feature-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 24px;
-            max-width: 1100px;
-            margin: 0 auto;
-        }
-
-        .feature-card {
-            background: var(--card-bg);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 28px;
-            transition: box-shadow 0.2s, transform 0.2s;
-        }
-
-        .feature-card:hover {
-            box-shadow: 0 8px 24px rgba(0,0,0,0.08);
-            transform: translateY(-2px);
-        }
-
-        .feature-card .icon {
-            width: 44px;
-            height: 44px;
-            background: var(--primary);
-            border-radius: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-bottom: 16px;
-            font-size: 1.4rem;
-        }
-
-        .feature-card h3 {
-            font-size: 1.1rem;
-            margin-bottom: 8px;
-        }
-
-        .feature-card p {
-            color: var(--text-secondary);
-            font-size: 0.9rem;
-        }
-
-        .screenshots {
-            padding: 80px 24px;
-            background: white;
-        }
-
-        .screenshots h2 {
-            text-align: center;
-            font-size: 2rem;
-            margin-bottom: 48px;
-        }
-
-        .screenshot-grid {
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: 40px;
-            max-width: 900px;
-            margin: 0 auto;
-        }
-
-        .screenshot-item {
-            text-align: center;
-        }
-
-        .screenshot-item img {
-            width: 100%;
-            border-radius: 12px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.12);
-            border: 1px solid var(--border);
-        }
-
-        .screenshot-item .caption {
-            margin-top: 12px;
-            font-size: 0.9rem;
-            color: var(--text-secondary);
-            font-weight: 500;
-        }
-
-        .requirements {
-            padding: 80px 24px;
-        }
-
-        .requirements h2 {
-            text-align: center;
-            font-size: 2rem;
-            margin-bottom: 48px;
-        }
-
-        .req-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-            gap: 16px;
-            max-width: 800px;
-            margin: 0 auto;
-        }
-
-        .req-item {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 16px;
-            background: var(--card-bg);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-        }
-
-        .req-item .dot {
-            width: 8px;
-            height: 8px;
-            background: var(--primary);
-            border-radius: 50%;
-            flex-shrink: 0;
-        }
-
-        .cta {
-            padding: 80px 24px;
-            text-align: center;
-            background: linear-gradient(135deg, #f0f7ff 0%, #e8f4fd 100%);
-        }
-
-        .cta h2 {
-            font-size: 2rem;
-            margin-bottom: 16px;
-        }
-
-        .cta p {
-            color: var(--text-secondary);
-            margin-bottom: 32px;
-            max-width: 500px;
-            margin-left: auto;
-            margin-right: auto;
-        }
-
-        .btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            padding: 14px 28px;
-            background: var(--primary);
-            color: white;
-            text-decoration: none;
-            border-radius: 8px;
-            font-weight: 600;
-            font-size: 1rem;
-            transition: background 0.2s;
-        }
-
-        .btn:hover {
-            background: var(--primary-dark);
-        }
-
-        .btn-secondary {
-            background: transparent;
-            color: var(--primary);
-            border: 2px solid var(--primary);
-        }
-
-        .btn-secondary:hover {
-            background: var(--primary);
-            color: white;
-        }
-
-        .footer {
-            padding: 40px 24px;
-            text-align: center;
-            border-top: 1px solid var(--border);
-        }
-
-        .footer-links {
-            display: flex;
-            gap: 24px;
-            justify-content: center;
-            margin-bottom: 16px;
-            flex-wrap: wrap;
-        }
-
-        .footer-links a {
-            color: var(--primary);
-            text-decoration: none;
-            font-size: 0.9rem;
-        }
-
-        .footer-links a:hover {
-            text-decoration: underline;
-        }
-
-        .footer p {
-            color: var(--text-secondary);
-            font-size: 0.85rem;
-        }
-
-        .author {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 12px;
-            margin-bottom: 16px;
-        }
-
-        .author img {
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-        }
-
-        .author span {
-            font-weight: 600;
-            font-size: 0.95rem;
-        }
-
-        @media (max-width: 768px) {
-            .hero h1 { font-size: 2rem; }
-            .hero p { font-size: 1rem; }
-            .features h2, .screenshots h2, .requirements h2, .cta h2 { font-size: 1.6rem; }
-        }
-    </style>
+    @media (max-width: 720px) { .card { padding: 24px; } }
+  </style>
 </head>
 <body>
+  <!-- Reusable PowerShell-style icon -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="ps" viewBox="0 0 32 32">
+      <path d="M6.2 4h22.3c1 0 1.7.9 1.4 1.9l-4.6 20.4c-.2.9-1 1.7-2 1.7H1.1c-1 0-1.7-.9-1.4-1.9L4.3 5.7C4.5 4.8 5.3 4 6.2 4Z" fill="#2671be"/>
+      <path d="M8.6 10.2 15.4 16l-9.5 6.6" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M15.6 22.6h7" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/>
+    </symbol>
+  </svg>
 
-    <!-- Hero -->
-    <section class="hero">
-        <img src="lockup-horizontal-white.png" alt="PIMSettings Manager" style="height: 80px; margin-bottom: 24px;">
-        <p>Configure PIM role settings across multiple Entra ID roles and PIM-enabled groups in bulk. Save hours of manual work.</p>
-        <div class="hero-badges">
-            <span class="badge">🛡️ Entra ID Roles</span>
-            <span class="badge">👥 PIM for Groups</span>
-            <span class="badge">⚡ Bulk Operations</span>
-            <span class="badge">👁️ Preview Before Apply</span>
+  <div class="page-shell">
+    <header class="card hero">
+      <a class="logo-mark" href="https://tools.appelcloud.dk" aria-label="AppelCloud Tools">
+        <svg class="logo-icon" viewBox="0 0 96 96" aria-hidden="true">
+          <rect width="44" height="44" fill="#F25022"/>
+          <rect x="52" width="44" height="44" fill="#7FBA00"/>
+          <rect y="52" width="44" height="44" fill="#00A4EF"/>
+          <rect x="52" y="52" width="44" height="44" fill="#FFB900"/>
+        </svg>
+        <span class="wordmark">AppelCloud</span>
+        <svg class="logo-cloud" viewBox="0 0 48 28" aria-hidden="true">
+          <path d="M15 19a7 7 0 0 1 9.6-6.5A6 6 0 0 1 32 9a6 6 0 0 1 5.7 7.6c3 .6 5.3 3.3 5.3 6.5 0 3.7-3 6.9-6.7 6.9H13.5C9.4 30 6 26.5 6 22.5 6 18.8 9 16 12.7 16c.7 0 1.4.1 2.1.3A7 7 0 0 1 15 19Z"/>
+        </svg>
+      </a>
+
+      <img class="lockup" src="lockup-horizontal.png" alt="PIMSettings Manager">
+
+      <h1>Bulk edit Microsoft Entra PIM settings</h1>
+      <p>A Windows desktop tool that configures PIM settings for many <strong>Entra ID roles</strong> and <strong>PIM-enabled groups</strong> at once. Pick the roles, set the policy once, preview the changes and apply — instead of editing every role by hand in the portal.</p>
+
+      <div class="actions">
+        <a class="btn btn-primary" href="https://github.com/Appelcloud/PimSettingsManager/releases/latest">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 19h16"/></svg>
+          Download latest release
+        </a>
+        <a class="btn btn-ghost" href="https://github.com/Appelcloud/PimSettingsManager">View on GitHub</a>
+      </div>
+
+      <div class="showcase">
+        <a class="thumb" href="screenshots/06-pim-role-settings.gif" target="_blank" rel="noopener">
+          <img src="screenshots/06-pim-role-settings.gif" alt="Configuring PIM role settings in PIMSettings Manager" loading="lazy">
+          Configure settings for all selected roles
+        </a>
+        <a class="thumb" href="screenshots/09-apply-results.png" target="_blank" rel="noopener">
+          <img src="screenshots/09-apply-results.png" alt="Changes applied successfully" loading="lazy">
+          Apply and see the result per role
+        </a>
+      </div>
+    </header>
+
+    <section class="card" aria-labelledby="features">
+      <h2 id="features">What it can do</h2>
+      <div class="tiles-grid">
+        <div class="tile">
+          <span class="pill">Entra ID Roles</span>
+          <h3>Bulk edit directory roles</h3>
+          <p>Apply the same PIM settings to many roles — Global Administrator, User Administrator and more.</p>
         </div>
+        <div class="tile">
+          <span class="pill">PIM for Groups</span>
+          <h3>Bulk edit PIM groups</h3>
+          <p>Configure the member and owner settings of your PIM-enabled groups.</p>
+        </div>
+        <div class="tile">
+          <span class="pill pill-green">Safe</span>
+          <h3>Preview before applying</h3>
+          <p>See every change as <em>Current → New value</em>, grouped by category and role.</p>
+        </div>
+        <div class="tile">
+          <span class="pill">Activation</span>
+          <h3>Activation rules</h3>
+          <p>Max duration, MFA or Conditional Access authentication context, justification, ticket info and approval.</p>
+        </div>
+        <div class="tile">
+          <span class="pill">Assignment</span>
+          <h3>Assignment rules</h3>
+          <p>Permanent or expiring eligible/active assignments, MFA and justification on active assignment.</p>
+        </div>
+        <div class="tile">
+          <span class="pill">Notifications</span>
+          <h3>Email notifications</h3>
+          <p>Control notifications to admins, assignees and approvers for assignments and activations.</p>
+        </div>
+      </div>
     </section>
 
-    <!-- Features -->
-    <section class="features">
-        <div class="container">
-            <h2>Features</h2>
-            <div class="feature-grid">
-                <div class="feature-card">
-                    <div class="icon">🔐</div>
-                    <h3>Entra ID Role Settings</h3>
-                    <p>Select multiple directory roles and configure activation, assignment, and notification policies in one go.</p>
-                </div>
-                <div class="feature-card">
-                    <div class="icon">👥</div>
-                    <h3>PIM for Groups</h3>
-                    <p>Apply PIM settings to PIM-enabled security groups with the same powerful bulk editing experience.</p>
-                </div>
-                <div class="feature-card">
-                    <div class="icon">👁️</div>
-                    <h3>Preview Changes</h3>
-                    <p>Review all pending changes grouped by category before applying. Know exactly what will change.</p>
-                </div>
-                <div class="feature-card">
-                    <div class="icon">⚙️</div>
-                    <h3>Full Policy Control</h3>
-                    <p>Configure MFA, justification, approval workflows, expiration, authentication contexts, and notifications.</p>
-                </div>
-                <div class="feature-card">
-                    <div class="icon">🔄</div>
-                    <h3>Per-Category Config</h3>
-                    <p>Set different policies for Entra ID roles and PIM Groups within the same session.</p>
-                </div>
-                <div class="feature-card">
-                    <div class="icon">📋</div>
-                    <h3>Detailed Logging</h3>
-                    <p>Full audit trail of all operations logged locally for troubleshooting and compliance.</p>
-                </div>
-            </div>
+    <section class="card" aria-labelledby="get-started">
+      <h2 id="get-started"><svg class="ps-icon"><use href="#ps"/></svg> Get started</h2>
+      <ol class="steps">
+        <li class="step">
+          <svg class="ps-icon"><use href="#ps"/></svg>
+          <div>
+            <h3>1. Download</h3>
+            <p>Get <code>tool.zip</code> from the <a href="https://github.com/Appelcloud/PimSettingsManager/releases/latest">latest release</a>.</p>
+          </div>
+        </li>
+        <li class="step">
+          <svg class="ps-icon"><use href="#ps"/></svg>
+          <div>
+            <h3>2. Extract</h3>
+            <p>Right-click <code>tool.zip</code> → <strong>Extract All…</strong> to a folder on your PC.</p>
+          </div>
+        </li>
+        <li class="step">
+          <svg class="ps-icon"><use href="#ps"/></svg>
+          <div>
+            <h3>3. Run</h3>
+            <p>Open the extracted folder and run <code>PIMSettings Manager.exe</code>.</p>
+          </div>
+        </li>
+      </ol>
+
+      <div class="terminal">
+        <div class="terminal-bar">
+          <span><svg class="ps-icon"><use href="#ps"/></svg> Or do it all in PowerShell</span>
+          <button class="copy-btn" type="button" data-copy="ps-script">Copy</button>
         </div>
+<pre id="ps-script"><span class="c"># Download the latest release</span>
+<span class="k">Invoke-WebRequest</span> -Uri "https://github.com/Appelcloud/PimSettingsManager/releases/latest/download/tool.zip" -OutFile "$env:USERPROFILE\Downloads\tool.zip"
+
+<span class="c"># Extract the tool</span>
+<span class="k">Expand-Archive</span> -Path "$env:USERPROFILE\Downloads\tool.zip" -DestinationPath "$env:USERPROFILE\PIMSettingsManager" -Force
+
+<span class="c"># Run PIMSettings Manager</span>
+<span class="k">Get-ChildItem</span> "$env:USERPROFILE\PIMSettingsManager" -Recurse -Filter "PIMSettings Manager.exe" | <span class="k">Select-Object</span> -First 1 | <span class="k">Start-Process</span></pre>
+      </div>
     </section>
 
-    <!-- Screenshots -->
-    <section class="screenshots">
-        <div class="container">
-            <h2>Screenshots</h2>
-            <div class="screenshot-grid">
-                <div class="screenshot-item">
-                    <img src="screenshots/screenshot-home.png" alt="Home screen">
-                    <div class="caption">Sign in and get started with a clear overview of capabilities</div>
-                </div>
-                <div class="screenshot-item">
-                    <img src="screenshots/screenshot-roles.png" alt="Role selection">
-                    <div class="caption">Select from all available Entra ID roles with search and bulk select</div>
-                </div>
-                <div class="screenshot-item">
-                    <img src="screenshots/screenshot-settings.png" alt="Settings configuration">
-                    <div class="caption">Configure activation, assignment and notification policies per category</div>
-                </div>
-            </div>
+    <section class="card" aria-labelledby="requirements">
+      <h2 id="requirements">Requirements</h2>
+      <div class="req-grid">
+        <div>
+          <h3>On your PC</h3>
+          <ul>
+            <li>Windows 10 (1809 / build 17763) or later, or Windows 11 — x64</li>
+            <li><a href="https://dotnet.microsoft.com/download/dotnet/8.0">.NET 8 Desktop Runtime</a> (x64) — or <code>winget install Microsoft.DotNet.DesktopRuntime.8</code></li>
+            <li><a href="https://learn.microsoft.com/windows/apps/windows-app-sdk/downloads">Windows App SDK 2.2 runtime</a> (x64)</li>
+          </ul>
         </div>
+        <div>
+          <h3>In your tenant</h3>
+          <ul>
+            <li>Microsoft Entra ID P2 license</li>
+            <li>An account allowed to manage PIM settings (e.g. Privileged Role Administrator)</li>
+            <li>Consent to the delegated Microsoft Graph permissions — an admin may need to grant it the first time</li>
+          </ul>
+        </div>
+      </div>
     </section>
 
-    <!-- Requirements -->
-    <section class="requirements">
-        <div class="container">
-            <h2>Requirements</h2>
-            <div class="req-grid">
-                <div class="req-item">
-                    <div class="dot"></div>
-                    <span>Windows 10 (17763+) or Windows 11</span>
-                </div>
-                <div class="req-item">
-                    <div class="dot"></div>
-                    <span>.NET 8 Desktop Runtime</span>
-                </div>
-                <div class="req-item">
-                    <div class="dot"></div>
-                    <span>Microsoft Entra ID P2 License</span>
-                </div>
-                <div class="req-item">
-                    <div class="dot"></div>
-                    <span>RoleManagement.ReadWrite.Directory</span>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- CTA -->
-    <section class="cta">
-        <h2>Ready to get started?</h2>
-        <p>Download the latest release and start managing your PIM role settings in bulk.</p>
-        <a href="https://github.com/Appelcloud/BulkPimRoleSettings/releases" class="btn">⬇️ Download Latest Release</a>
-    </section>
-
-    <!-- Footer -->
-    <footer class="footer">
-        <div class="author">
-            <span>Built by Alexander Appelby — Microsoft 365 & Security MVP</span>
-        </div>
-        <div class="footer-links">
-            <a href="https://blog.appelcloud.dk">Blog</a>
-            <a href="https://tools.appelcloud.dk">Tools Hub</a>
-            <a href="https://mvp.microsoft.com/en-US/mvp/profile/12ef06cd-cdab-4545-b87d-b7b682dd0d67">MVP Profile</a>
-            <a href="https://dk.linkedin.com/in/alexander-appelby">LinkedIn</a>
-            <a href="https://www.buymeacoffee.com/appelcloud">☕ Buy me a beer</a>
-        </div>
-        <p>&copy; 2025 Alexander Appelby. All rights reserved.</p>
+    <footer class="site-footer">
+      <p>
+        Made with passion by Alexander Appelby —
+        <a href="https://blog.appelcloud.dk" target="_blank" rel="noopener noreferrer">blog.appelcloud.dk</a>
+        ·
+        <a href="https://tools.appelcloud.dk" target="_blank" rel="noopener noreferrer">Tools Hub</a>
+        ·
+        <a href="https://www.linkedin.com/in/alexander-appelby/" target="_blank" rel="noopener noreferrer">LinkedIn</a>
+      </p>
     </footer>
+  </div>
 
+  <script>
+    document.querySelectorAll('[data-copy]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const text = document.getElementById(btn.dataset.copy).innerText;
+        try {
+          await navigator.clipboard.writeText(text);
+          btn.textContent = 'Copied!';
+        } catch {
+          btn.textContent = 'Press Ctrl+C';
+        }
+        setTimeout(() => (btn.textContent = 'Copy'), 1800);
+      });
+    });
+  </script>
 </body>
 </html>
