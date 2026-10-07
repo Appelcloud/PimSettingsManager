@@ -4,6 +4,16 @@
   <img src="docs/lockup-horizontal.png" alt="PIMSettings Manager" height="80">
 </p>
 
+<p align="center">
+  <a href="https://github.com/Appelcloud/PimSettingsManager/releases/latest"><img src="https://img.shields.io/github/v/release/Appelcloud/PimSettingsManager?label=latest%20release&color=2185d0" alt="Latest release"></a>
+  <a href="https://github.com/Appelcloud/PimSettingsManager/releases/latest"><img src="https://img.shields.io/github/release-date/Appelcloud/PimSettingsManager?label=released&color=2185d0" alt="Release date"></a>
+  <a href="https://github.com/Appelcloud/PimSettingsManager/releases"><img src="https://img.shields.io/github/downloads/Appelcloud/PimSettingsManager/total?label=downloads&color=2ea043" alt="Total downloads"></a>
+  <a href="https://github.com/Appelcloud/PimSettingsManager/releases/latest"><img src="https://img.shields.io/github/downloads/Appelcloud/PimSettingsManager/latest/total?label=latest%20downloads&color=2ea043" alt="Latest release downloads"></a>
+  <a href="https://github.com/Appelcloud/PimSettingsManager/commits/main"><img src="https://img.shields.io/github/last-commit/Appelcloud/PimSettingsManager?color=596173" alt="Last commit"></a>
+  <img src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078d4?logo=windows" alt="Platform">
+  <img src="https://img.shields.io/badge/.NET-8.0-512bd4?logo=dotnet" alt=".NET 8">
+</p>
+
 A Windows desktop tool that lets you configure **Microsoft Entra PIM (Privileged Identity Management) settings for many roles at once**. Pick the roles, set the policy once, preview the changes, and apply — instead of editing every role by hand in the portal.
 
 ## What it can do
