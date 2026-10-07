@@ -4,16 +4,26 @@
   <img src="docs/lockup-horizontal.png" alt="PIMSettings Manager" height="80">
 </p>
 
-A Windows desktop tool that lets you configure **Microsoft Entra PIM (Privileged Identity Management) settings for many roles at once**. Pick the roles, set the policy once, preview the changes, and apply — instead of editing every role by hand in the portal.
+<p align="center">
+  <a href="https://github.com/Appelcloud/PimSettingsManager/releases/latest"><img src="https://img.shields.io/github/v/release/Appelcloud/PimSettingsManager?label=latest%20release&color=2185d0" alt="Latest release"></a>
+  <a href="https://github.com/Appelcloud/PimSettingsManager/releases/latest"><img src="https://img.shields.io/github/release-date/Appelcloud/PimSettingsManager?label=released&color=2185d0" alt="Release date"></a>
+  <a href="https://github.com/Appelcloud/PimSettingsManager/releases"><img src="https://img.shields.io/github/downloads/Appelcloud/PimSettingsManager/total?label=downloads&color=2ea043" alt="Total downloads"></a>
+  <a href="https://github.com/Appelcloud/PimSettingsManager/releases/latest"><img src="https://img.shields.io/github/downloads/Appelcloud/PimSettingsManager/latest/total?label=latest%20downloads&color=2ea043" alt="Latest release downloads"></a>
+  <a href="https://github.com/Appelcloud/PimSettingsManager/commits/main"><img src="https://img.shields.io/github/last-commit/Appelcloud/PimSettingsManager?color=596173" alt="Last commit"></a>
+  <img src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078d4?logo=windows" alt="Platform">
+  <img src="https://img.shields.io/badge/.NET-8.0-512bd4?logo=dotnet" alt=".NET 8">
+</p>
+
+A Windows desktop tool that lets you configure **Microsoft Entra PIM (Privileged Identity Management) settings for many roles at once**. Pick the roles, set the policy once, preview the changes, and apply - instead of editing every role by hand in the portal.
 
 ## What it can do
 
-- **Entra ID Roles** — bulk edit PIM settings for directory roles (Global Administrator, User Administrator, etc.)
-- **PIM for Groups** — bulk edit the member and owner settings of PIM-enabled groups
-- **Different settings per category** — configure Entra ID Roles and PIM for Groups separately in the same session
-- **Starts from your current policy** — the settings page is pre-filled with the existing PIM policy of the selected role
-- **Preview before applying** — see every change as *Current → New value*, grouped by category and role
-- **Local logging** — every session is logged for troubleshooting
+- **Entra ID Roles** - bulk edit PIM settings for directory roles (Global Administrator, User Administrator, etc.)
+- **PIM for Groups** - bulk edit the member and owner settings of PIM-enabled groups
+- **Different settings per category** - configure Entra ID Roles and PIM for Groups separately in the same session
+- **Starts from your current policy** - the settings page is pre-filled with the existing PIM policy of the selected role
+- **Preview before applying** - see every change as *Current → New value*, grouped by category and role
+- **Local logging** - every session is logged for troubleshooting
 
 > **Note:** Azure Resources (subscriptions, resource groups) is shown in the app but is still under construction.
 
@@ -23,7 +33,7 @@ A Windows desktop tool that lets you configure **Microsoft Entra PIM (Privileged
 |---|---|
 | **Activation** | Maximum duration (hours) · Require nothing, Azure MFA or a Conditional Access authentication context · Require justification · Require ticket information · Require approval (with user/group approvers) |
 | **Assignment** | Allow permanent eligible / active assignment · Expire eligible / active assignment after (days) · Require MFA on active assignment · Require justification on active assignment |
-| **Notifications** | Email notifications for eligible assignments, active assignments and activations — to admins, assignees/requestors and approvers |
+| **Notifications** | Email notifications for eligible assignments, active assignments and activations - to admins, assignees/requestors and approvers |
 
 ## Prerequisites
 
@@ -31,7 +41,7 @@ A Windows desktop tool that lets you configure **Microsoft Entra PIM (Privileged
 
 | Requirement | How to get it |
 |---|---|
-| Windows 10 version 1809 (build 17763) or later, or Windows 11 — x64 | — |
+| Windows 10 version 1809 (build 17763) or later, or Windows 11 - x64 | - |
 | .NET 8 Desktop Runtime (x64) | [Download](https://dotnet.microsoft.com/download/dotnet/8.0) or `winget install Microsoft.DotNet.DesktopRuntime.8` |
 | Windows App SDK 2.2 runtime (x64) | [Download](https://learn.microsoft.com/windows/apps/windows-app-sdk/downloads) |
 
@@ -115,11 +125,11 @@ Log files are saved per session in:
 | [Windows App SDK / WinUI 3](https://learn.microsoft.com/windows/apps/windows-app-sdk/) | 2.2.0 |
 | [Microsoft Authentication Library (MSAL)](https://learn.microsoft.com/entra/msal/) + Broker (Windows sign-in) | 4.67.2 |
 | [CommunityToolkit.Mvvm](https://learn.microsoft.com/dotnet/communitytoolkit/mvvm/) | 8.4.0 |
-| [Microsoft Graph API](https://learn.microsoft.com/graph/) (beta endpoint) | — |
+| [Microsoft Graph API](https://learn.microsoft.com/graph/) (beta endpoint) | - |
 
 ## Author
 
-**Alexander Appelby** — Microsoft 365 & Security MVP
+**Alexander Appelby** - Microsoft 365 & Security MVP
 
 - [Blog](https://blog.appelcloud.dk)
 - [Tools Hub](https://tools.appelcloud.dk)
