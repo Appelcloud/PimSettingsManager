@@ -41,6 +41,7 @@ public sealed class AuthService
     private const string ClientId = "14d82eec-204b-4c2f-b7e8-296a70dab67e";
     private const string Authority = "https://login.microsoftonline.com/common";
 
+    // MSAL client for handling authentication and token acquisition
     private readonly IPublicClientApplication _msalClient;
     private readonly LogService _log = LogService.Instance;
     private AuthenticationResult? _authResult;
@@ -255,6 +256,7 @@ public sealed class AuthService
 
     public async Task LogoutAsync()
     {
+        // Clear the cached accounts and reset the authentication result.
         var accounts = await _msalClient.GetAccountsAsync();
         foreach (var account in accounts)
         {

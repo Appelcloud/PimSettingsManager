@@ -60,6 +60,7 @@ public static class KnownEntraRoles
         "Edge Administrator",
         "Entra Backup Administrator",
         "Entra Backup Reader",
+        "Entra SOC Identity Responder",
         "Exchange Administrator",
         "Exchange Backup Administrator",
         "Exchange Recipient Administrator",

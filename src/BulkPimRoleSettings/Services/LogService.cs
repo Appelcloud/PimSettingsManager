@@ -175,5 +175,4 @@ public sealed class LogService
         Log(LogLevel.ERROR, LogCategory.SYSTEM, $"{prefix}: {ex.Message}");
         Log(LogLevel.DEBUG, LogCategory.SYSTEM, $"{ex.GetType().Name} StackTrace: {ex.StackTrace}");
     }
-
 }
