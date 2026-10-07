@@ -76,6 +76,11 @@
     }
     .thumb:hover img { transform: translateY(-4px); box-shadow: 0 18px 35px rgba(15, 29, 71, 0.18); }
 
+    .intro { color: var(--text-muted); line-height: 1.7; max-width: 860px; margin: -4px 0 24px; }
+    .intro p { margin: 0 0 12px; }
+    .intro strong { color: var(--text-primary); }
+    .intro .note { font-size: 0.9rem; font-style: italic; }
+
     /* Tiles */
     .tiles-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; }
     .tile {
@@ -184,36 +189,41 @@
 
     <section class="card" aria-labelledby="features">
       <h2 id="features">What it can do</h2>
-      <div class="tiles-grid">
+      <div class="intro">
+        <p>Changing PIM settings in the Microsoft Entra admin center means opening every role and every group one at a time. <strong>PIMSettings Manager</strong> removes that repetitive work: you pick the roles and PIM-enabled groups you want to change, define the settings once, and the tool applies them to all of them in one go.</p>
+        <p>After you sign in with your Entra ID account, you choose which PIM categories to manage: <strong>Entra ID Roles</strong>, <strong>PIM for Groups</strong>, or both. Each category is configured on its own, so directory roles and groups can get different policies in the same session. The settings page is pre-filled with the current PIM policy of the selected role, which makes it easy to adjust only what you need.</p>
+        <p>Before anything is changed, a preview lists every setting that will change, showing the current value next to the new one for each role. When you click <strong>Apply Changes</strong>, the tool updates the policies through Microsoft Graph using your own delegated permissions and shows the result for each role. Every session is logged locally in <code>%LocalAppData%\PIMSettingsManager\Logs</code> (kept for 30 days) for troubleshooting.</p>
+        <p class="note">Azure Resources (subscriptions and resource groups) is visible in the app but still under construction.</p>
+      </div>      <div class="tiles-grid">
         <div class="tile">
           <span class="pill">Entra ID Roles</span>
           <h3>Bulk edit directory roles</h3>
-          <p>Apply the same PIM settings to many roles: Global Administrator, User Administrator and more. All directory roles in your tenant are listed, with search and <strong>Select All</strong> to quickly pick the ones you need. The settings page starts with the current policy of the selected role, so you only change what matters.</p>
+          <p>Apply the same PIM settings to many roles: Global Administrator, User Administrator and more.</p>
         </div>
         <div class="tile">
           <span class="pill">PIM for Groups</span>
           <h3>Bulk edit PIM groups</h3>
-          <p>The tool finds the PIM-enabled groups in your tenant. Choose the groups, then configure their <strong>member</strong> and <strong>owner</strong> settings. Group settings are configured separately from Entra ID roles, so both can be updated in the same session with different policies.</p>
+          <p>Configure the member and owner settings of your PIM-enabled groups.</p>
         </div>
         <div class="tile">
           <span class="pill pill-green">Safe</span>
           <h3>Preview before applying</h3>
-          <p>See every change as <em>Current → New value</em>, grouped by category and role. Only settings that actually change are listed, and nothing is written until you click <strong>Apply Changes</strong>. Afterwards you get a result per role showing what succeeded and what failed.</p>
+          <p>See every change as <em>Current → New value</em>, grouped by category and role.</p>
         </div>
         <div class="tile">
           <span class="pill">Activation</span>
           <h3>Activation rules</h3>
-          <p>Set the maximum activation duration in hours and what is required on activation: nothing, Azure MFA or a Conditional Access authentication context from your tenant. Optionally require justification, ticket information and approval, with approvers picked by searching users and groups.</p>
+          <p>Max duration, MFA or Conditional Access authentication context, justification, ticket info and approval.</p>
         </div>
         <div class="tile">
           <span class="pill">Assignment</span>
           <h3>Assignment rules</h3>
-          <p>Allow permanent eligible and active assignments, or make them expire after a set number of days. For active assignments you can also require Azure MFA and a justification when the assignment is made.</p>
+          <p>Permanent or expiring eligible/active assignments, MFA and justification on active assignment.</p>
         </div>
         <div class="tile">
           <span class="pill">Notifications</span>
           <h3>Email notifications</h3>
-          <p>Control the emails sent to admins, assignees/requestors and approvers when roles are assigned as eligible, assigned as active or activated. For each, choose default recipients, add extra email addresses and limit to critical emails only.</p>
+          <p>Control notifications to admins, assignees and approvers for assignments and activations.</p>
         </div>
       </div>
     </section>
