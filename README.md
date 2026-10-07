@@ -107,8 +107,6 @@ Log files are saved per session in:
 %LocalAppData%\PIMSettingsManager\Logs
 ```
 
-Logs older than 30 days are deleted automatically.
-
 ## Built with
 
 | Dependency | Version |
