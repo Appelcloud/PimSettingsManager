@@ -79,7 +79,6 @@
     .intro { color: var(--text-muted); line-height: 1.7; max-width: 860px; margin: -4px 0 24px; }
     .intro p { margin: 0 0 12px; }
     .intro strong { color: var(--text-primary); }
-    .intro .note { font-size: 0.9rem; font-style: italic; }
 
     /* Tiles */
     .tiles-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; }
@@ -190,11 +189,9 @@
     <section class="card" aria-labelledby="features">
       <h2 id="features">What it can do</h2>
       <div class="intro">
-        <p>Changing PIM settings in the Microsoft Entra admin center means opening every role and every group one at a time. <strong>PIMSettings Manager</strong> removes that repetitive work: you pick the roles and PIM-enabled groups you want to change, define the settings once, and the tool applies them to all of them in one go.</p>
-        <p>After you sign in with your Entra ID account, you choose which PIM categories to manage: <strong>Entra ID Roles</strong>, <strong>PIM for Groups</strong>, or both. Each category is configured on its own, so directory roles and groups can get different policies in the same session. The settings page is pre-filled with the current PIM policy of the selected role, which makes it easy to adjust only what you need.</p>
-        <p>Before anything is changed, a preview lists every setting that will change, showing the current value next to the new one for each role. When you click <strong>Apply Changes</strong>, the tool updates the policies through Microsoft Graph using your own delegated permissions and shows the result for each role. Every session is logged locally in <code>%LocalAppData%\PIMSettingsManager\Logs</code> (kept for 30 days) for troubleshooting.</p>
-        <p class="note">Azure Resources (subscriptions and resource groups) is visible in the app but still under construction.</p>
-      </div>      <div class="tiles-grid">
+        <p>Stop editing PIM settings one role at a time. Select the <strong>Entra ID roles</strong> and <strong>PIM-enabled groups</strong> you want to change, define the settings once, preview every change and apply them all in one go.</p>
+      </div>
+      <div class="tiles-grid">
         <div class="tile">
           <span class="pill">Entra ID Roles</span>
           <h3>Bulk edit directory roles</h3>
