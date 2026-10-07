@@ -4,59 +4,118 @@
   <img src="docs/lockup-horizontal.png" alt="PIMSettings Manager" height="80">
 </p>
 
-A Windows desktop tool for configuring PIM (Privileged Identity Management) role settings across multiple Entra ID roles and PIM-enabled groups in bulk. Save hours of manual work by applying activation, assignment, and notification settings to many roles at once.
+A Windows desktop tool that lets you configure **Microsoft Entra PIM (Privileged Identity Management) settings for many roles at once**. Pick the roles, set the policy once, preview the changes, and apply — instead of editing every role by hand in the portal.
 
-## Features
+## What it can do
 
-- **Bulk edit Entra ID role settings** — Select multiple directory roles and configure them simultaneously
-- **Bulk edit PIM for Groups settings** — Apply settings to PIM-enabled security groups
-- **Per-category configuration** — Set different policies for Entra ID roles vs. PIM Groups in a single session
-- **Preview all changes before applying** — Review a detailed diff grouped by category before committing
-- **Configure activation, assignment & notification policies** — Full control over MFA, justification, approval, expiration, authentication contexts, and email notifications
-- **Detailed logging** — Full audit trail logged locally for troubleshooting and compliance
+- **Entra ID Roles** — bulk edit PIM settings for directory roles (Global Administrator, User Administrator, etc.)
+- **PIM for Groups** — bulk edit the member and owner settings of PIM-enabled groups
+- **Different settings per category** — configure Entra ID Roles and PIM for Groups separately in the same session
+- **Starts from your current policy** — the settings page is pre-filled with the existing PIM policy of the selected role
+- **Preview before applying** — see every change as *Current → New value*, grouped by category and role
+- **Local logging** — every session is logged for troubleshooting
 
-## Screenshots
+> **Note:** Azure Resources (subscriptions, resource groups) is shown in the app but is still under construction.
 
-### Home
-![Home](docs/screenshots/screenshot-home.png)
+### Settings you can configure
 
-### Role Selection
-![Role Selection](docs/screenshots/screenshot-roles.png)
-
-### Settings Configuration
-![Settings](docs/screenshots/screenshot-settings.png)
-
-## Requirements
-
-- Windows 10 (build 17763+) or Windows 11
-- .NET 8 Desktop Runtime
-- Entra ID account with `RoleManagement.ReadWrite.Directory` permissions
-- Microsoft Entra ID P2 license (for PIM)
-
-## Getting Started
-
-1. Download the latest release from [Releases](https://github.com/Appelcloud/BulkPimRoleSettings/releases)
-2. Run the application
-3. Sign in with your Entra ID credentials
-4. Select the PIM categories you want to manage (Entra ID Roles, PIM for Groups, or both)
-5. Select roles, configure settings per category, preview all changes, and apply!
-
-## Permissions Required
-
-The application uses delegated permissions via MSAL (Microsoft Authentication Library):
-
-| Permission | Purpose |
+| Area | Settings |
 |---|---|
-| `RoleManagement.ReadWrite.Directory` | Read and update PIM role policies |
-| `Directory.Read.All` | List roles, groups, and users |
+| **Activation** | Maximum duration (hours) · Require nothing, Azure MFA or a Conditional Access authentication context · Require justification · Require ticket information · Require approval (with user/group approvers) |
+| **Assignment** | Allow permanent eligible / active assignment · Expire eligible / active assignment after (days) · Require MFA on active assignment · Require justification on active assignment |
+| **Notifications** | Email notifications for eligible assignments, active assignments and activations — to admins, assignees/requestors and approvers |
 
-## Built With
+## Prerequisites
 
-- [WinUI 3](https://learn.microsoft.com/en-us/windows/apps/winui/winui3/) — Modern Windows UI framework
-- [Windows App SDK](https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/) — Windows application platform
-- [CommunityToolkit.Mvvm](https://learn.microsoft.com/en-us/dotnet/communitytoolkit/mvvm/) — MVVM architecture
-- [Microsoft Identity Client (MSAL)](https://learn.microsoft.com/en-us/entra/msal/) — Authentication
-- [Microsoft Graph API](https://learn.microsoft.com/en-us/graph/) — PIM policy management
+**On your PC**
+
+| Requirement | How to get it |
+|---|---|
+| Windows 10 version 1809 (build 17763) or later, or Windows 11 — x64 | — |
+| .NET 8 Desktop Runtime (x64) | [Download](https://dotnet.microsoft.com/download/dotnet/8.0) or `winget install Microsoft.DotNet.DesktopRuntime.8` |
+| Windows App SDK 2.2 runtime (x64) | [Download](https://learn.microsoft.com/windows/apps/windows-app-sdk/downloads) |
+
+**In your tenant**
+
+- Microsoft Entra ID P2 license (required for PIM)
+- An account that is allowed to manage PIM settings (for example **Privileged Role Administrator**)
+- Consent to the delegated Microsoft Graph permissions below. The tool signs in with the Microsoft Graph Command Line Tools app (`14d82eec-204b-4c2f-b7e8-296a70dab67e`), so an administrator may need to grant consent the first time.
+
+| Permission | Used for |
+|---|---|
+| `RoleManagementPolicy.ReadWrite.Directory` | Read and update PIM policies for Entra ID roles |
+| `RoleManagement.ReadWrite.Directory` | Read Entra ID role definitions and policy assignments |
+| `RoleManagementPolicy.ReadWrite.AzureADGroup` | Read and update PIM policies for groups |
+| `PrivilegedAccess.ReadWrite.AzureADGroup` | List PIM-enabled groups |
+| `PrivilegedAccess.ReadWrite.AzureResources` | Azure Resources (under construction) |
+| `Directory.Read.All` | Look up users, groups and authentication contexts |
+| `User.Read` | Show the signed-in user |
+
+## Getting started
+
+1. Download **`tool.zip`** from the [Releases](https://github.com/Appelcloud/PimSettingsManager/releases) page.
+2. **Extract** `tool.zip` to a folder on your PC.
+3. Open the extracted `tool` folder and run **`PIMSettings Manager.exe`**.
+
+## How to use it
+
+### 1. Sign in
+Click **Sign In**.
+
+![Login](docs/screenshots/01-login.png)
+
+### 2. Authenticate
+Choose **Work or school account** and sign in with your Entra ID account.
+
+![Authentication](docs/screenshots/02-auth.png)
+
+### 3. Pick PIM categories
+Select what you want to manage: **Entra ID Roles**, **PIM for Groups**, or both.
+
+![Category picker](docs/screenshots/03-picker.png)
+
+### 4. Select Entra ID roles
+Search or use **Select All** to pick the roles you want to configure.
+
+![PIM roles](docs/screenshots/04-pim-roles.png)
+
+### 5. Select PIM groups
+When **PIM for Groups** is checked, the PIM-enabled groups in your tenant are listed. Select the groups you want to configure.
+
+![PIM groups](docs/screenshots/05-pim-groups.png)
+
+### 6. Configure Entra ID role settings
+Adjust the activation, assignment and notification settings. The page starts with the current policy of the selected role.
+
+![PIM role settings](docs/screenshots/06-pim-role-settings.gif)
+
+### 7. Configure PIM group settings
+Select the group roles (member and/or owner) to configure, then set their settings the same way.
+
+![PIM group settings](docs/screenshots/07-pim-group-settings.png)
+
+### 8. Preview and apply
+Review every change per role (*Current* vs. *New Value*), then click **Apply Changes**.
+
+![Summary](docs/screenshots/08-pim-roles-summary.png)
+
+## Logs
+
+Log files are saved per session in:
+
+```
+%LocalAppData%\PIMSettingsManager\Logs
+```
+
+## Built with
+
+| Dependency | Version |
+|---|---|
+| [.NET](https://dotnet.microsoft.com/) | 8.0 |
+| [Windows App SDK / WinUI 3](https://learn.microsoft.com/windows/apps/windows-app-sdk/) | 2.2.0 |
+| [Microsoft Authentication Library (MSAL)](https://learn.microsoft.com/entra/msal/) + Broker (Windows sign-in) | 4.67.2 |
+| [CommunityToolkit.Mvvm](https://learn.microsoft.com/dotnet/communitytoolkit/mvvm/) | 8.4.0 |
+| [Microsoft Graph API](https://learn.microsoft.com/graph/) (beta endpoint) | — |
 
 ## Author
 
